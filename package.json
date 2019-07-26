@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "description": "Sort rom files using TOSEC DatSets into an appropriate directory structure",
   "engines": {
-    "node": ">= 10.13 <11"
+    "node": ">= 12 <13"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^5.4.0",
     "@types/jest": "^24.0.15",
+    "@types/meow": "^5.0.0",
     "@types/node": "^10.14.10",
     "jest": "~24.8.0",
     "prettier": "~1.18.2",
@@ -31,10 +32,12 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^5.4.1",
+    "crc32-stream": "^3.0.0",
     "log-symbols": "^3.0.0",
     "log-update": "^3.2.0",
     "meow": "^5.0.0",
     "ora": "^3.4.0",
+    "readdirp": "^3.1.1",
     "tslib": "~1.10.0"
   }
 }
