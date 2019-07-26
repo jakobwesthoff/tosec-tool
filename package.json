@@ -1,0 +1,11 @@
+{
+  "name": "tosec-sorter",
+  "version": "1.0.0",
+  "description": "Sort rom files using TOSEC DatSets into an appropriate directory structure",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jakob Westhoff <jakob@westhoffswelt.de> (http://westhoffswelt.de)",
+  "license": "MIT"
+}
