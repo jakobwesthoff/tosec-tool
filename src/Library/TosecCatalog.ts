@@ -34,6 +34,21 @@ export class TosecCatalog implements ICatalog {
     );
   }
 
+  private async indexDatset(entries: EntryInfo[]): Promise<void> {
+    const numberOfDats = entries.length;
+    await this.renderer.withTask(
+      `Loading ${numberOfDats} datsets...`,
+      async (update: TaskRendererUpdate) => {
+        let iteration = 0;
+        for (const { fullPath: filepath } of entries) {
+          await this.indexDatFile(filepath);
+          update(`Loading datsets (${++iteration} / ${numberOfDats})...`);
+        }
+        update(`Loaded ${iteration} datsets.`);
+      }
+    );
+  }
+
   private async indexDatFile(filepath: string): Promise<void> {
     const datfile = basename(filepath);
     await this.renderer.withTask(
@@ -78,21 +93,6 @@ export class TosecCatalog implements ICatalog {
           }
         });
         update(null);
-      }
-    );
-  }
-
-  private async indexDatset(entries: EntryInfo[]): Promise<void> {
-    const numberOfDats = entries.length;
-    await this.renderer.withTask(
-      `Loading ${numberOfDats} datsets...`,
-      async (update: TaskRendererUpdate) => {
-        let iteration = 0;
-        for (const { fullPath: filepath } of entries) {
-          await this.indexDatFile(filepath);
-          update(`Loading datsets (${++iteration} / ${numberOfDats})...`);
-        }
-        update(`Loaded ${iteration} datsets.`);
       }
     );
   }

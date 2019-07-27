@@ -1,23 +1,20 @@
-import {createHash, Hash} from "crypto";
-import {createReadStream} from "fs";
-import {Readable} from "stream";
-import {CrcStream} from './CrcStream';
+import { createHash, Hash } from "crypto";
+import { Readable } from "stream";
+import { CrcStream } from "./CrcStream";
 
 export interface HashedFile {
-  filepath: string;
   sha1: string;
   md5: string;
   crc32: string;
 }
 
-
 export class HashGenerator {
-  public async hash(filepath: string): Promise<HashedFile> {
+  public async hash(fileStream: Readable): Promise<HashedFile> {
     const [sha1, md5, crc32] = await this.hashStream(
       ["sha1", "md5", "crc32"],
-      createReadStream(filepath, { autoClose: true })
+      fileStream
     );
-    return { filepath, sha1, md5, crc32 };
+    return { sha1, md5, crc32 };
   }
 
   private createHashStream(algorithm: string): Hash | CrcStream {

@@ -1,6 +1,9 @@
+import { createReadStream } from "fs";
 import * as readdirp from "readdirp";
+import { Readable } from "stream";
 import { DataStorage } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
+import { FirstFileUnzipStream } from "./FirstFileUnzipStream";
 import { HashGenerator } from "./HashGenerator";
 import { ICatalog } from "./ICatalog";
 import { MimeTypeResolver } from "./MimeTypeResolver";
@@ -84,14 +87,23 @@ export class RomCatalog implements ICatalog {
             break;
           }
 
-          for (const { filepath } of rows) {
-            const hashes = await this.hashGenerator.hash(filepath);
-            this.storage.storeHashesForRom(hashes);
+          for (const { filepath, mimetype } of rows) {
+            const fileStream = this.createReadableForFile(filepath, mimetype);
+            const hashes = await this.hashGenerator.hash(fileStream);
+            this.storage.storeHashesForRom(filepath, hashes);
             update(`Hashing roms (${++iteration} / ${count})...`);
           }
         }
         update(`Hashed ${iteration} roms.`);
       }
     );
+  }
+
+  private createReadableForFile(filepath: string, mimetype: string): Readable {
+    if (mimetype === "application/zip") {
+      return new FirstFileUnzipStream(filepath);
+    } else {
+      return createReadStream(filepath, { autoClose: true });
+    }
   }
 }

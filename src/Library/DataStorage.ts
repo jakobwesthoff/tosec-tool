@@ -1,9 +1,13 @@
 import { Database, Statement } from "better-sqlite3";
 import { HashedFile } from "./HashGenerator";
 
-export interface RomFile extends HashedFile {
+export interface RomFile {
+  filepath: string;
   extension: string;
   mimetype: string;
+  crc32: string;
+  md5: string;
+  sha1: string;
 }
 
 export interface DatFile {
@@ -180,12 +184,13 @@ export class DataStorage {
     return stmt.all({ limit });
   }
 
-  public storeHashesForRom(hashes: HashedFile): void {
+  public storeHashesForRom(filepath: string, hashes: HashedFile): void {
     this.updateRomHashesStatement.run({
       ...hashes,
       crc32: this.hexToBuffer(hashes.crc32),
       md5: this.hexToBuffer(hashes.md5),
-      sha1: this.hexToBuffer(hashes.sha1)
+      sha1: this.hexToBuffer(hashes.sha1),
+      filepath
     });
   }
 
