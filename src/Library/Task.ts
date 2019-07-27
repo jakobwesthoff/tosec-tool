@@ -5,13 +5,16 @@ export enum TaskState {
 
 export class Task {
   private state: TaskState;
+  private disabled: boolean;
 
   constructor(private description: string) {
+    this.disabled = false;
     this.state = TaskState.RUNNING;
   }
 
-  update(state: TaskState, description: string) {
+  update(state: TaskState, description: string | null) {
     this.state = state;
+    this.disabled = description === null;
     this.description = description;
   }
 
@@ -21,5 +24,9 @@ export class Task {
 
   getDescription(): string {
     return this.description;
+  }
+
+  isDisabled(): boolean {
+    return this.disabled;
   }
 }
