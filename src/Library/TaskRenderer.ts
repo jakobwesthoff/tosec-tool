@@ -7,7 +7,7 @@ import logUpdate = require("log-update");
 import ora = require("ora");
 import Timeout = NodeJS.Timeout;
 
-export type TaskRendererUpdate = (description: string) => void;
+export type TaskRendererUpdate = (description: string | null) => void;
 
 export class TaskRenderer {
   private tasks: Task[];
@@ -24,7 +24,7 @@ export class TaskRenderer {
   public createTask(description: string): Task {
     const task = new Task(description);
     this.tasks.push(task);
-    this.render();
+    // this.render();
     return task;
   }
 
@@ -67,6 +67,7 @@ export class TaskRenderer {
 
     if (finishedTasks.length > 0) {
       const output = finishedTasks
+        .filter((task: Task) => !task.isDisabled())
         .map((task: Task) => `${logSymbols.success} ${task.getDescription()}`)
         .join("\n");
       this.logUpdate(output);
@@ -78,6 +79,7 @@ export class TaskRenderer {
     this.cleanupTasks();
 
     const output = this.tasks
+      .filter((task: Task) => !task.isDisabled())
       .map(
         (task: Task) =>
           `${chalk.gray(this.ora.frame() as any)}${task.getDescription()}`
