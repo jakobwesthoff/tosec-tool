@@ -7,6 +7,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^5.4.0",
+    "@types/crc": "^3.4.0",
     "@types/jest": "^24.0.15",
     "@types/meow": "^5.0.0",
     "@types/node": "^10.14.10",
@@ -32,11 +33,14 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^5.4.1",
-    "crc32-stream": "^3.0.0",
+    "chalk": "^2.4.2",
+    "crc": "^3.8.0",
+    "file-type": "^12.1.0",
     "log-symbols": "^3.0.0",
     "log-update": "^3.2.0",
     "meow": "^5.0.0",
     "ora": "^3.4.0",
+    "read-chunk": "^3.2.0",
     "readdirp": "^3.1.1",
     "tslib": "~1.10.0"
   }
