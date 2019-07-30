@@ -1,5 +1,7 @@
 import { Database, Statement } from "better-sqlite3";
 import { HashedFile } from "./HashGenerator";
+import { SimpleTask } from "./TaskList/SimpleTask";
+import { TaskList, TaskUpdate } from "./TaskList/TaskList";
 
 export interface RomFile {
   filepath: string;
@@ -44,9 +46,52 @@ export class DataStorage {
   private tosecRomInsertStatement: Statement | undefined;
   private tosecGameInsertStatement: Statement | undefined;
 
-  constructor(private database: Database) {}
+  constructor(private database: Database, private taskList: TaskList) {}
 
   public initialize(): void {
+    this.createTables();
+
+    this.romInsertStatement = this.database.prepare(
+      `
+                INSERT INTO roms (filepath, sha1, md5, crc32, extension, mimetype)
+                VALUES (@filepath, @sha1, @md5, @crc32, @extension, @mimetype)
+      `
+    );
+
+    this.datInsertStatement = this.database.prepare(
+      `
+                INSERT INTO tosec_dats (filepath, name, description, category, version, author, email, homepage,
+                                        url)
+                VALUES (@filepath, @name, @description, @category, @version, @author, @email, @homepage, @url)
+      `
+    );
+
+    this.tosecGameInsertStatement = this.database.prepare(
+      `
+                INSERT INTO tosec_games (datid, name, description)
+                VALUES (@datid, @name, @description)
+      `
+    );
+
+    this.tosecRomInsertStatement = this.database.prepare(
+      `
+                INSERT INTO tosec_roms (gameid, name, size, crc32, md5, sha1)
+                VALUES (@gameid, @name, @size, @crc32, @md5, @sha1)
+      `
+    );
+
+    this.updateRomHashesStatement = this.database.prepare(
+      `
+                UPDATE roms
+                SET sha1=@sha1,
+                    md5=@md5,
+                    crc32=@crc32
+                WHERE filepath = @filepath
+      `
+    );
+  }
+
+  private createTables(): void {
     this.database.exec(`
         CREATE TABLE roms
         (
@@ -60,7 +105,7 @@ export class DataStorage {
         );
         CREATE UNIQUE INDEX idx_roms_filepath ON roms (filepath);
         CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32);
-        CREATE INDEX idx_roms_mimetypes ON roms (mimetype);
+        -- CREATE INDEX idx_roms_mimetypes ON roms (mimetype);
 
         CREATE TABLE tosec_dats
         (
@@ -101,45 +146,59 @@ export class DataStorage {
         CREATE INDEX idx_tosec_roms_hashes ON tosec_roms (sha1, md5, crc32);
         CREATE INDEX idx_tosec_roms_gameids ON tosec_roms (gameid);
     `);
+  }
 
-    this.romInsertStatement = this.database.prepare(
-      `
-                INSERT INTO roms (filepath, sha1, md5, crc32, extension, mimetype)
-                VALUES (@filepath, @sha1, @md5, @crc32, @extension, @mimetype)
-      `
+  public async loadFromStorage(filename: string): Promise<void> {
+    const attachStatement = this.database.prepare(
+      `ATTACH @filename as storage`
+    );
+    attachStatement.run({ filename });
+
+    const transferStatement = this.database.prepare(`INSERT INTO @destination
+                                                     SELECT *
+                                                     FROM @ source`);
+    await this.taskList.withTask(
+      new SimpleTask(`Loading stored database...`),
+      async (update: TaskUpdate) => {
+        const tables = ["roms", "tosec_dats", "tosec_games", "tosec_roms"];
+        tables.forEach((destination: string, index: number) => {
+          update(`Loading stored database (${index} / ${tables.length})...`);
+          transferStatement.run({
+            source: `storage.${destination}, destination`
+          });
+        });
+      }
     );
 
-    this.datInsertStatement = this.database.prepare(
-      `
-                INSERT INTO tosec_dats (filepath, name, description, category, version, author, email, homepage,
-                                        url)
-                VALUES (@filepath, @name, @description, @category, @version, @author, @email, @homepage, @url)
-      `
+    const detachStatement = this.database.prepare(`DETACH storage`);
+    detachStatement.run();
+  }
+
+  public async saveToStorage(filename: string): Promise<void> {
+    const attachStatement = this.database.prepare(
+      `ATTACH @filename as storage`
+    );
+    attachStatement.run({ filename });
+
+    const transferStatement = this.database.prepare(`INSERT INTO @destination
+                                                     SELECT *
+                                                     FROM @ source`);
+    await this.taskList.withTask(
+      new SimpleTask(`Storing database to file...`),
+      async (update: TaskUpdate) => {
+        const tables = ["roms", "tosec_dats", "tosec_games", "tosec_roms"];
+        tables.forEach((source: string, index: number) => {
+          update(`Storing database to file (${index} / ${tables.length})...`);
+          transferStatement.run({
+            source,
+            destination: `storage.${source}`
+          });
+        });
+      }
     );
 
-    this.tosecGameInsertStatement = this.database.prepare(
-      `
-                INSERT INTO tosec_games (datid, name, description)
-                VALUES (@datid, @name, @description)
-      `
-    );
-
-    this.tosecRomInsertStatement = this.database.prepare(
-      `
-                INSERT INTO tosec_roms (gameid, name, size, crc32, md5, sha1)
-                VALUES (@gameid, @name, @size, @crc32, @md5, @sha1)
-      `
-    );
-
-    this.updateRomHashesStatement = this.database.prepare(
-      `
-                UPDATE roms
-                SET sha1=@sha1,
-                    md5=@md5,
-                    crc32=@crc32
-                WHERE filepath = @filepath
-      `
-    );
+    const detachStatement = this.database.prepare(`DETACH storage`);
+    detachStatement.run();
   }
 
   public storeRomFile(rom: RomFile): void {

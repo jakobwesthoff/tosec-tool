@@ -4,13 +4,14 @@ import * as readdirp from "readdirp";
 import { DataStorage, DatFile, TosecGame, TosecRom } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
 import { ICatalog } from "./ICatalog";
-import { TaskRenderer, TaskRendererUpdate } from "./TaskRenderer";
+import { SimpleTask } from "./TaskList/SimpleTask";
+import { TaskList, TaskUpdate } from "./TaskList/TaskList";
 import { TosecDatParser } from "./TosecDatParser";
 
 export class TosecCatalog implements ICatalog {
   constructor(
     private datasetDirectory: string,
-    private renderer: TaskRenderer,
+    private taskList: TaskList,
     private storage: DataStorage,
     private parser: TosecDatParser
   ) {}
@@ -21,9 +22,9 @@ export class TosecCatalog implements ICatalog {
   }
 
   private async getDatFileList(): Promise<EntryInfo[]> {
-    return await this.renderer.withTask(
-      "Scanning datsets...",
-      async (update: TaskRendererUpdate) => {
+    return await this.taskList.withTask(
+      new SimpleTask("Scanning datsets..."),
+      async (update: TaskUpdate) => {
         const entries = await readdirp.promise(this.datasetDirectory, {
           type: "files",
           fileFilter: "*.dat"
@@ -36,9 +37,9 @@ export class TosecCatalog implements ICatalog {
 
   private async indexDatset(entries: EntryInfo[]): Promise<void> {
     const numberOfDats = entries.length;
-    await this.renderer.withTask(
-      `Loading ${numberOfDats} datsets...`,
-      async (update: TaskRendererUpdate) => {
+    await this.taskList.withTask(
+      new SimpleTask(`Loading ${numberOfDats} datsets...`),
+      async (update: TaskUpdate) => {
         let iteration = 0;
         for (const { fullPath: filepath } of entries) {
           await this.indexDatFile(filepath);
@@ -51,9 +52,9 @@ export class TosecCatalog implements ICatalog {
 
   private async indexDatFile(filepath: string): Promise<void> {
     const datfile = basename(filepath);
-    await this.renderer.withTask(
-      `Analysing roms from ${datfile}...`,
-      async (update: TaskRendererUpdate) => {
+    await this.taskList.withTask(
+      new SimpleTask(`Analysing roms from ${datfile}...`),
+      async (update: TaskUpdate) => {
         // tslint:disable-next-line:non-literal-fs-path
         const fileStream = fs.createReadStream(filepath);
         let datid: number;

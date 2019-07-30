@@ -1,4 +1,5 @@
 import { createReadStream } from "fs";
+import { basename } from "path";
 import * as readdirp from "readdirp";
 import { Readable } from "stream";
 import { DataStorage } from "./DataStorage";
@@ -7,12 +8,13 @@ import { FirstFileUnzipStream } from "./FirstFileUnzipStream";
 import { HashGenerator } from "./HashGenerator";
 import { ICatalog } from "./ICatalog";
 import { MimeTypeResolver } from "./MimeTypeResolver";
-import { TaskRenderer, TaskRendererUpdate } from "./TaskRenderer";
+import { SimpleTask } from "./TaskList/SimpleTask";
+import { TaskList, TaskUpdate } from "./TaskList/TaskList";
 
 export class RomCatalog implements ICatalog {
   constructor(
     private filepath: string,
-    private renderer: TaskRenderer,
+    private taskList: TaskList,
     private storage: DataStorage,
     private mimeTypeResolver: MimeTypeResolver,
     private hashGenerator: HashGenerator
@@ -26,9 +28,9 @@ export class RomCatalog implements ICatalog {
   }
 
   private async getRomListEntries(filepath: string) {
-    return await this.renderer.withTask(
-      "Scanning roms...",
-      async (update: TaskRendererUpdate) => {
+    return await this.taskList.withTask(
+      new SimpleTask("Scanning roms..."),
+      async (update: TaskUpdate) => {
         const entries = await readdirp.promise(filepath, {
           type: "files"
         });
@@ -39,9 +41,9 @@ export class RomCatalog implements ICatalog {
   }
 
   private async analyseRomEntries(entries: EntryInfo[]) {
-    await this.renderer.withTask(
-      "Analysing roms...",
-      async (update: TaskRendererUpdate) => {
+    await this.taskList.withTask(
+      new SimpleTask("Analysing roms..."),
+      async (update: TaskUpdate) => {
         const numberOfFiles = entries.length;
         for (let i = 0; i < numberOfFiles; i++) {
           const entry = entries[i];
@@ -56,7 +58,7 @@ export class RomCatalog implements ICatalog {
             extension: fileType.ext,
             mimetype: fileType.mime
           });
-          update(`Analysing roms (${i} / ${numberOfFiles})...`);
+          update(`Analysing rom (${i} / ${numberOfFiles}): ${entry.basename}`);
         }
 
         const count = this.storage.getNumberOfRoms();
@@ -68,9 +70,9 @@ export class RomCatalog implements ICatalog {
 
   private async updateRomHashes() {
     const count = this.storage.getNumberOfRomsWithoutHashes();
-    await this.renderer.withTask(
-      `Hashing roms (0 / ${count})...`,
-      async (update: TaskRendererUpdate) => {
+    await this.taskList.withTask(
+      new SimpleTask(`Hashing roms (0 / ${count})...`),
+      async (update: TaskUpdate) => {
         /*
          * This way of iteration in chunks is not really efficient, but is due
          * to constraints in better-sqlite not possible in other way, without
@@ -91,7 +93,9 @@ export class RomCatalog implements ICatalog {
             const fileStream = this.createReadableForFile(filepath, mimetype);
             const hashes = await this.hashGenerator.hash(fileStream);
             this.storage.storeHashesForRom(filepath, hashes);
-            update(`Hashing roms (${++iteration} / ${count})...`);
+            update(
+              `Hashing roms (${++iteration} / ${count}): ${basename(filepath)}`
+            );
           }
         }
         update(`Hashed ${iteration} roms.`);

@@ -1,11 +1,12 @@
 import * as Database from "better-sqlite3";
-import { BackupMetadata } from "better-sqlite3";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
 import { HashGenerator } from "./Library/HashGenerator";
 import { MimeTypeResolver } from "./Library/MimeTypeResolver";
 import { RomCatalog } from "./Library/RomCatalog";
-import { TaskRenderer, TaskRendererUpdate } from "./Library/TaskRenderer";
+import { TaskList } from "./Library/TaskList/TaskList";
+import { TosecCatalog } from "./Library/TosecCatalog";
+import { TosecDatParser } from "./Library/TosecDatParser";
 
 const cli = meow(
   `
@@ -24,53 +25,38 @@ if (cli.input.length !== 3) {
   cli.showHelp();
 }
 (async () => {
-  const inMemoryDatabase = new Database("rom-catalog.sqlite3", {
+  const inMemoryDatabase = new Database("", {
     memory: true
   });
   // const sorter = new Sorter(
-  const dataStorage = new DataStorage(inMemoryDatabase);
+  const taskList = new TaskList();
+  const dataStorage = new DataStorage(inMemoryDatabase, taskList);
   await dataStorage.initialize();
-  const renderer = new TaskRenderer();
   const mimeTypeResolver = new MimeTypeResolver();
-  mimeTypeResolver;
   const hashGenerator = new HashGenerator();
-  hashGenerator;
   const romsCatalog = new RomCatalog(
     cli.input[0],
-    renderer,
+    taskList,
     dataStorage,
     mimeTypeResolver,
     hashGenerator
   );
-  // const datParser = new TosecDatParser();
-  // const tosecCatalog = new TosecCatalog(
-  //   cli.input[1],
-  //   renderer,
-  //   dataStorage,
-  //   datParser
-  // );
+  const datParser = new TosecDatParser();
+  const tosecCatalog = new TosecCatalog(
+    cli.input[1],
+    taskList,
+    dataStorage,
+    datParser
+  );
   //   new RomWriter(cli.input[2])
   // );
   // await sorter.run();
-  renderer.start();
+  taskList.start();
   try {
+    await tosecCatalog.createIndex();
     await romsCatalog.createIndex();
-    // await tosecCatalog.createIndex();
-    await renderer.withTask(
-      "Persisting Database...",
-      async (update: TaskRendererUpdate) => {
-        await inMemoryDatabase.backup("hashed-catalog-blob.sqlite3", {
-          progress: (info: BackupMetadata) => {
-            update(
-              `Persisting database (${info.totalPages -
-                info.remainingPages} / ${info.totalPages})...`
-            );
-            return 100;
-          }
-        });
-      }
-    );
+    await dataStorage.saveToStorage("storage_test.sqlite3");
   } finally {
-    renderer.stop();
+    taskList.stop();
   }
 })();
