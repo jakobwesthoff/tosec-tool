@@ -1,42 +1,47 @@
 import chalk from "chalk";
 import { LogUpdate } from "log-update";
 import { Ora } from "ora";
-import { Task, TaskState } from "./Task";
+import { ITask } from "./ITask";
 import logSymbols = require("log-symbols");
 import logUpdate = require("log-update");
 import ora = require("ora");
 import Timeout = NodeJS.Timeout;
 
-export type TaskRendererUpdate = (description: string | null) => void;
+export interface TaskUpdate {
+  (...args: any[]): void;
+}
 
-export class TaskRenderer {
-  private tasks: Task[];
-  private ora: Ora;
+export interface SymbolMap {
+  spinner: string;
+  success: string;
+  error: string;
+  info: string;
+  warning: string;
+}
+
+export class TaskList {
+  private tasks: ITask[];
   private logUpdate: LogUpdate;
   private timeout: Timeout | undefined;
+  private ora: Ora;
 
   constructor() {
     this.tasks = [];
-    this.ora = ora();
     this.logUpdate = logUpdate;
+    this.ora = ora();
   }
 
-  public createTask(description: string): Task {
-    const task = new Task(description);
+  public addTask(task: ITask) {
     this.tasks.push(task);
-    // this.render();
-    return task;
   }
 
   public async withTask<T>(
-    description: string,
-    executor: (update: TaskRendererUpdate) => Promise<T>
+    task: ITask,
+    executor: (update: TaskUpdate) => Promise<T>
   ): Promise<T> {
-    const task = this.createTask(description);
-    const returnValue = await executor((newDescription: string) =>
-      task.update(TaskState.RUNNING, newDescription)
-    );
-    task.update(TaskState.FINISHED, task.getDescription());
+    this.addTask(task);
+    const returnValue = await executor(task.createUpdateFn());
+    task.finish();
     return returnValue;
   }
 
@@ -58,17 +63,15 @@ export class TaskRenderer {
 
   private cleanupTasks() {
     const finishedTasks = [];
-    while (
-      this.tasks.length > 0 &&
-      this.tasks[0].getState() === TaskState.FINISHED
-    ) {
+    while (this.tasks.length > 0 && this.tasks[0].hasFinished()) {
       finishedTasks.push(this.tasks.shift());
     }
 
     if (finishedTasks.length > 0) {
+      const symbols = this.createSymbolMap();
       const output = finishedTasks
-        .filter((task: Task) => !task.isDisabled())
-        .map((task: Task) => `${logSymbols.success} ${task.getDescription()}`)
+        .map((task: ITask) => task.render(symbols))
+        .filter((line: string | undefined) => line !== undefined)
         .join("\n");
       this.logUpdate(output);
       this.logUpdate.done();
@@ -78,13 +81,15 @@ export class TaskRenderer {
   private render() {
     this.cleanupTasks();
 
+    const symbols = this.createSymbolMap();
     const output = this.tasks
-      .filter((task: Task) => !task.isDisabled())
-      .map(
-        (task: Task) =>
-          `${chalk.gray(this.ora.frame() as any)}${task.getDescription()}`
-      )
+      .map((task: ITask) => task.render(symbols))
+      .filter((line: string | undefined) => line !== undefined)
       .join("\n");
     this.logUpdate(output);
+  }
+
+  private createSymbolMap(): SymbolMap {
+    return { spinner: chalk.grey(this.ora.frame() as any), ...logSymbols };
   }
 }
