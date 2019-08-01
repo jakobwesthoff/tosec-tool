@@ -66,6 +66,9 @@ export class DataStorage {
   private datFileKnownStatement: Statement | undefined;
   private romFileKnownStatement: Statement | undefined;
   private listOfDatFilepathsStatement: Statement | undefined;
+  private listOfRomFilepathsStatement: Statement | undefined;
+  private removeDatFileStatement: Statement | undefined;
+  private removeRomFileStatement: Statement | undefined;
 
   constructor(private database: Database, private taskList: TaskList) {}
 
@@ -135,6 +138,29 @@ export class DataStorage {
       `
                 SELECT filepath
                 from tosec_dats
+      `
+    );
+
+    this.listOfRomFilepathsStatement = this.database.prepare(
+      `
+                SELECT filepath
+                from roms
+      `
+    );
+
+    this.removeDatFileStatement = this.database.prepare(
+      `
+                DELETE
+                FROM tosec_dats
+                WHERE filepath = @filepath
+      `
+    );
+
+    this.removeRomFileStatement = this.database.prepare(
+      `
+                DELETE
+                FROM roms
+                WHERE filepath = @filepath
       `
     );
   }
@@ -420,17 +446,19 @@ export class DataStorage {
     );
   }
 
+  public async getRomFilepaths(): Promise<string[]> {
+    return (await this.listOfRomFilepathsStatement.all()).map(
+      (row: { filepath: string }) => row.filepath
+    );
+  }
+
   public async removeDatFileRecursive(filepath: string): Promise<void> {
     // ON DELETE CASCADE should take core of the rest.
-    const stmt = this.database.prepare(
-      `
-                DELETE
-                FROM tosec_dats
-                WHERE filepath = @filepath
-      `
-    );
+    this.removeDatFileStatement.run({ filepath });
+  }
 
-    stmt.run({ filepath });
+  public async removeRomFile(filepath: string): Promise<void> {
+    this.removeRomFileStatement.run({ filepath });
   }
 
   public getStorageStats(): StorageStats {

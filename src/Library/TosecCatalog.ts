@@ -47,7 +47,7 @@ export class TosecCatalog implements ICatalog {
 
         for (let i = 0; i < removedDatFiles.length; i++) {
           update(
-            `Removing no longer existing dat (${i + 1} / ${
+            `Removing no longer existing dat from db (${i + 1} / ${
               removedDatFiles.length
             })`
           );

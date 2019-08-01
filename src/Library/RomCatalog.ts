@@ -1,9 +1,11 @@
 import { createReadStream } from "fs";
+import { filterSeries } from "p-iteration";
 import { basename } from "path";
 import * as readdirp from "readdirp";
 import { Readable } from "stream";
 import { DataStorage } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
+import { exists } from "./FileAccess";
 import { FirstFileUnzipStream } from "./FirstFileUnzipStream";
 import { HashGenerator } from "./HashGenerator";
 import { ICatalog } from "./ICatalog";
@@ -21,12 +23,51 @@ export class RomCatalog implements ICatalog {
   ) {}
 
   public async createIndex(): Promise<void> {
+    await this.cleanupRemovedFiles();
     let entries = (await this.getRomListEntries(this.filepaths)).filter(
       (entry: EntryInfo) => !this.storage.isRomAlreadyKnown(entry.fullPath)
     );
     await this.analyseRomEntries(entries);
     entries = undefined; // Allow GC to cleanup possibly large list of file entries
     await this.updateRomHashes();
+  }
+
+  private async cleanupRemovedFiles(): Promise<void> {
+    await this.taskList.withTask(
+      new SimpleTask(`Validating rom file database...`),
+      async (update: TaskUpdate) => {
+        const storedRomFiles = await this.storage.getRomFilepaths();
+        let iteration = 0;
+        const removedRomFiles = await filterSeries(
+          storedRomFiles,
+          async (filepath: string) => {
+            update(
+              `Validating loaded rom file database (${++iteration} / ${
+                storedRomFiles.length
+              })...`
+            );
+
+            return !(await exists(filepath));
+          }
+        );
+
+        for (let i = 0; i < removedRomFiles.length; i++) {
+          update(
+            `Removing no longer existing rom from db (${i + 1} / ${
+              removedRomFiles.length
+            })...`
+          );
+          await new Promise<void>(
+            (resolve: (value?: PromiseLike<void> | void) => void) =>
+              setImmediate(async () => {
+                await this.storage.removeRomFile(removedRomFiles[i]);
+                resolve();
+              })
+          );
+        }
+        update(`Validated rom file database.`);
+      }
+    );
   }
 
   private async getRomListEntries(filepaths: string[]): Promise<EntryInfo[]> {
