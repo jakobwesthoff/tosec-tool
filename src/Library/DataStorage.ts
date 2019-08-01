@@ -51,7 +51,7 @@ export interface StorageStats {
 }
 
 export class DataStorage {
-  private readonly TABLES_TO_PERSIST = [
+  private readonly TABLES_TO_PERSIST: string[] = [
     "roms",
     "tosec_dats",
     "tosec_games",
@@ -65,6 +65,7 @@ export class DataStorage {
   private tosecGameInsertStatement: Statement | undefined;
   private datFileKnownStatement: Statement | undefined;
   private romFileKnownStatement: Statement | undefined;
+  private listOfDatFilepathsStatement: Statement | undefined;
 
   constructor(private database: Database, private taskList: TaskList) {}
 
@@ -129,6 +130,13 @@ export class DataStorage {
                   AND crc32 IS NOT NULL
       `
     );
+
+    this.listOfDatFilepathsStatement = this.database.prepare(
+      `
+                SELECT filepath
+                from tosec_dats
+      `
+    );
   }
 
   private createIndices(): void {
@@ -180,7 +188,10 @@ export class DataStorage {
           datid       INTEGER NOT NULL,
           name        TEXT    NOT NULL,
           description TEXT    NOT NULL,
-          FOREIGN KEY (datid) REFERENCES tosec_dats (id)
+          CONSTRAINT fk_datid
+            FOREIGN KEY (datid) 
+                REFERENCES tosec_dats (id) 
+                ON DELETE CASCADE
       );
 
       CREATE TABLE ${prefix}tosec_roms
@@ -192,7 +203,10 @@ export class DataStorage {
           crc32  BLOB    NOT NULL,
           md5    BLOB    NOT NULL,
           sha1   BLOB    NOT NULL,
-          FOREIGN KEY (gameid) REFERENCES tosec_games (id)
+          CONSTRAINT fk_gameid
+            FOREIGN KEY (gameid) 
+                REFERENCES tosec_games (id) 
+                ON DELETE CASCADE
       );
   `);
   }
@@ -398,6 +412,25 @@ export class DataStorage {
       md5: this.hexToBuffer(rom.md5),
       sha1: this.hexToBuffer(rom.sha1)
     });
+  }
+
+  public async getDatFilepaths(): Promise<string[]> {
+    return (await this.listOfDatFilepathsStatement.all()).map(
+      (row: { filepath: string }) => row.filepath
+    );
+  }
+
+  public async removeDatFileRecursive(filepath: string): Promise<void> {
+    // ON DELETE CASCADE should take core of the rest.
+    const stmt = this.database.prepare(
+      `
+                DELETE
+                FROM tosec_dats
+                WHERE filepath = @filepath
+      `
+    );
+
+    stmt.run({ filepath });
   }
 
   public getStorageStats(): StorageStats {

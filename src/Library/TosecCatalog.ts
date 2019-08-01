@@ -1,8 +1,10 @@
 import * as fs from "fs";
+import { filterSeries } from "p-iteration";
 import { basename } from "path";
 import * as readdirp from "readdirp";
 import { DataStorage, DatFile, TosecGame, TosecRom } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
+import { exists } from "./FileAccess";
 import { ICatalog } from "./ICatalog";
 import { SimpleTask } from "./TaskList/SimpleTask";
 import { TaskList, TaskUpdate } from "./TaskList/TaskList";
@@ -17,10 +19,49 @@ export class TosecCatalog implements ICatalog {
   ) {}
 
   public async createIndex(): Promise<void> {
+    await this.cleanupRemovedFiles();
     let entries = (await this.getDatFileList()).filter(
       (entry: EntryInfo) => !this.storage.isDatFileAlreadyKnown(entry.fullPath)
     );
     await this.indexDatset(entries);
+  }
+
+  private async cleanupRemovedFiles(): Promise<void> {
+    await this.taskList.withTask(
+      new SimpleTask(`Validating loaded TOSEC datset database...`),
+      async (update: TaskUpdate) => {
+        const storedDatFiles = await this.storage.getDatFilepaths();
+        let iteration = 0;
+        const removedDatFiles = await filterSeries(
+          storedDatFiles,
+          async (filepath: string) => {
+            update(
+              `Validating loaded TOSEC datset database (${++iteration} / ${
+                storedDatFiles.length
+              })...`
+            );
+
+            return !(await exists(filepath));
+          }
+        );
+
+        for (let i = 0; i < removedDatFiles.length; i++) {
+          update(
+            `Removing no longer existing dat (${i + 1} / ${
+              removedDatFiles.length
+            })`
+          );
+          await new Promise<void>(
+            (resolve: (value?: PromiseLike<void> | void) => void) =>
+              setImmediate(async () => {
+                await this.storage.removeDatFileRecursive(removedDatFiles[i]);
+                resolve();
+              })
+          );
+        }
+        update(`Validated TOSEC dataset database.`);
+      }
+    );
   }
 
   private async getDatFileList(): Promise<EntryInfo[]> {
