@@ -1,62 +1,115 @@
 import * as Database from "better-sqlite3";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
+import { exists } from "./Library/FileAccess";
 import { HashGenerator } from "./Library/HashGenerator";
 import { MimeTypeResolver } from "./Library/MimeTypeResolver";
 import { RomCatalog } from "./Library/RomCatalog";
-import { TaskList } from "./Library/TaskList/TaskList";
+import { SimpleTask } from "./Library/TaskList/SimpleTask";
+import { StaticInfoTask } from "./Library/TaskList/StaticInfoTask";
+import { TaskList, TaskUpdate } from "./Library/TaskList/TaskList";
 import { TosecCatalog } from "./Library/TosecCatalog";
 import { TosecDatParser } from "./Library/TosecDatParser";
+import logSymbols = require("log-symbols");
 
 const cli = meow(
   `
 	Usage
-	  $ tosec-sorter <input-directory> <dataset-directory> <output-directory>
+	  $ tosec-sorter -t <dataset-dir> -o <output-dir> [-s <storage-file>] <input-dirs...>
 
 	Examples
-	  $ foo assorted/rom/directory tosec/datasets sorted/output
+	  $ tosec-sorter -t ./datasets -o ./sorted-output -s index.db ./source-1 ./source-2
 `,
   {
-    flags: {}
+    flags: {
+      datsets: {
+        type: "string",
+        alias: "t"
+      },
+      output: {
+        type: "string",
+        alias: "o"
+      },
+      storage: {
+        type: "string",
+        alias: "s"
+      }
+    }
   }
 );
 
-if (cli.input.length !== 3) {
+if (cli.input.length < 1 || !cli.flags.datsets || !cli.flags.output) {
   cli.showHelp();
 }
 (async () => {
+  const taskList = new TaskList();
+
   const inMemoryDatabase = new Database("", {
     memory: true
   });
-  // const sorter = new Sorter(
-  const taskList = new TaskList();
-  const dataStorage = new DataStorage(inMemoryDatabase, taskList);
-  await dataStorage.initialize();
+  const storage = new DataStorage(inMemoryDatabase, taskList);
+  await storage.initialize();
+
   const mimeTypeResolver = new MimeTypeResolver();
+
   const hashGenerator = new HashGenerator();
+
   const romsCatalog = new RomCatalog(
-    cli.input[0],
+    cli.input,
     taskList,
-    dataStorage,
+    storage,
     mimeTypeResolver,
     hashGenerator
   );
+
   const datParser = new TosecDatParser();
   const tosecCatalog = new TosecCatalog(
-    cli.input[1],
+    cli.flags.datsets,
     taskList,
-    dataStorage,
+    storage,
     datParser
   );
-  //   new RomWriter(cli.input[2])
-  // );
-  // await sorter.run();
+
   taskList.start();
   try {
+    if (cli.flags.storage) {
+      if (!(await exists(cli.flags.storage))) {
+        taskList.addTask(
+          new StaticInfoTask(
+            `Database file ${cli.flags.storage} not yet available. Reindexing everything.`
+          )
+        );
+      } else {
+        await storage.loadFrom(cli.flags.storage);
+      }
+    }
+
     await tosecCatalog.createIndex();
     await romsCatalog.createIndex();
-    await dataStorage.saveToStorage("storage_test.sqlite3");
-  } finally {
+
+    await taskList.withTask(
+      new SimpleTask(`Collecting stats...`),
+      async (update: TaskUpdate) => {
+        const {
+          numberOfRoms,
+          numberOfRomsZipped,
+          numberOfTosecDats,
+          numberOfTosecGames,
+          numberOfTosecRoms
+        } = await storage.getStorageStats();
+
+        update(
+          `Indexing complete: ${numberOfRoms} files (${numberOfRomsZipped} zipped), ${numberOfTosecDats} dats with ${numberOfTosecGames} games and ${numberOfTosecRoms} roms`
+        );
+      }
+    );
+
+    if (cli.flags.storage) {
+      await storage.saveFile(cli.flags.storage);
+    }
     taskList.stop();
+  } catch (error) {
+    taskList.stop();
+    process.stderr.write(`${logSymbols.error} ${error.message}\n`);
   }
 })();

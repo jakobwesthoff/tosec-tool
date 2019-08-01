@@ -1,5 +1,6 @@
 import { Database, Statement } from "better-sqlite3";
 import * as fse from "fs-extra";
+import { exists } from "./FileAccess";
 import { HashedFile } from "./HashGenerator";
 import { SimpleTask } from "./TaskList/SimpleTask";
 import { TaskList, TaskUpdate } from "./TaskList/TaskList";
@@ -40,12 +41,22 @@ export interface TosecRom {
   sha1: string;
 }
 
+export interface StorageStats {
+  numberOfRoms: number;
+  numberOfRomsZipped: number;
+  numberOfTosecDats: number;
+  numberOfTosecGames: number;
+  numberOfTosecRoms: number;
+}
+
 export class DataStorage {
   private romInsertStatement: Statement | undefined;
   private updateRomHashesStatement: Statement | undefined;
   private datInsertStatement: Statement | undefined;
   private tosecRomInsertStatement: Statement | undefined;
   private tosecGameInsertStatement: Statement | undefined;
+  private datFileKnownStatement: Statement | undefined;
+  private romFileKnownStatement: Statement | undefined;
 
   constructor(private database: Database, private taskList: TaskList) {}
 
@@ -91,12 +102,32 @@ export class DataStorage {
                 WHERE filepath = @filepath
       `
     );
+
+    this.datFileKnownStatement = this.database.prepare(
+      `
+                SELECT count(*) as count
+                FROM tosec_dats
+                WHERE filepath = @filepath
+      `
+    );
+
+    this.romFileKnownStatement = this.database.prepare(
+      `
+                SELECT count(*) as count
+                FROM roms
+                WHERE filepath = @filepath
+                  AND sha1 IS NOT NULL
+                  AND md5 IS NOT NULL
+                  AND crc32 IS NOT NULL
+      `
+    );
   }
 
   private createIndices(): void {
     this.database.exec(`
         CREATE UNIQUE INDEX idx_roms_filepath ON roms (filepath);
         CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32);
+        CREATE INDEX idx_roms_mimetype ON roms (mimetype);
 
         CREATE UNIQUE INDEX idx_tosec_dats_filepath ON tosec_dats (filepath);
 
@@ -158,11 +189,19 @@ export class DataStorage {
   `);
   }
 
-  public async loadFromStorage(filename: string): Promise<void> {
-    const attachStatement = this.database.prepare(
-      `ATTACH @filename as storage`
-    );
-    attachStatement.run({ filename });
+  public async loadFrom(filename: string): Promise<void> {
+    if (!(await exists(filename))) {
+      throw new Error(`Database file ${filename} is not readable.`);
+    }
+
+    try {
+      const attachStatement = this.database.prepare(
+        `ATTACH @filename as storage`
+      );
+      attachStatement.run({ filename });
+    } catch (error) {
+      throw new Error(`Database file could not be opened: ${error.message}`);
+    }
 
     await this.taskList.withTask(
       new SimpleTask(`Loading stored database...`),
@@ -173,11 +212,17 @@ export class DataStorage {
             `Loading stored database (${index + 1} / ${tables.length})...`
           );
           const source = `storage.${destination}`;
-          const transferStatement = this.database
-            .prepare(`INSERT INTO ${destination}
+          try {
+            const transferStatement = this.database
+              .prepare(`INSERT INTO ${destination}
                                                      SELECT *
                                                      FROM ${source}`);
-          transferStatement.run();
+            transferStatement.run();
+          } catch (error) {
+            throw new Error(
+              `Database file could not be read: ${error.message}`
+            );
+          }
         });
       }
     );
@@ -186,8 +231,8 @@ export class DataStorage {
     detachStatement.run();
   }
 
-  public async saveToStorage(filename: string): Promise<void> {
-    if (fse.existsSync(filename)) {
+  public async saveFile(filename: string): Promise<void> {
+    if (await exists(filename)) {
       await fse.unlink(filename);
     }
 
@@ -277,6 +322,16 @@ export class DataStorage {
     return info.lastInsertRowid as number;
   }
 
+  public isDatFileAlreadyKnown(filepath: string): boolean {
+    const { count } = this.datFileKnownStatement.get({ filepath });
+    return count === 1;
+  }
+
+  public isRomAlreadyKnown(filepath: string): boolean {
+    const { count } = this.romFileKnownStatement.get({ filepath });
+    return count === 1;
+  }
+
   public storeTosecGame(game: TosecGame): number {
     const info = this.tosecGameInsertStatement.run(game);
     return info.lastInsertRowid as number;
@@ -289,6 +344,59 @@ export class DataStorage {
       md5: this.hexToBuffer(rom.md5),
       sha1: this.hexToBuffer(rom.sha1)
     });
+  }
+
+  public getStorageStats(): StorageStats {
+    let stmt: Statement;
+
+    stmt = this.database.prepare(
+      `
+                SELECT COUNT(*) as numberOfRoms
+                FROM roms;
+      `
+    );
+    const { numberOfRoms } = stmt.get();
+
+    stmt = this.database.prepare(
+      `
+                SELECT COUNT(*) as numberOfRomsZipped
+                FROM roms
+                WHERE mimetype = 'application/zip'
+      `
+    );
+    const { numberOfRomsZipped } = stmt.get();
+
+    stmt = this.database.prepare(
+      `
+                SELECT COUNT(*) as numberOfTosecDats
+                FROM tosec_dats;
+      `
+    );
+    const { numberOfTosecDats } = stmt.get();
+
+    stmt = this.database.prepare(
+      `
+                SELECT COUNT(*) as numberOfTosecGames
+                FROM tosec_games;
+      `
+    );
+    const { numberOfTosecGames } = stmt.get();
+
+    stmt = this.database.prepare(
+      `
+                SELECT COUNT(*) as numberOfTosecRoms
+                FROM tosec_roms;
+      `
+    );
+    const { numberOfTosecRoms } = stmt.get();
+
+    return {
+      numberOfRoms,
+      numberOfRomsZipped,
+      numberOfTosecDats,
+      numberOfTosecGames,
+      numberOfTosecRoms
+    };
   }
 
   private hexToBuffer(hex: string): Buffer {

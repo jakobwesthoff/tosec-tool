@@ -17,7 +17,9 @@ export class TosecCatalog implements ICatalog {
   ) {}
 
   public async createIndex(): Promise<void> {
-    const entries = await this.getDatFileList();
+    let entries = (await this.getDatFileList()).filter(
+      (entry: EntryInfo) => !this.storage.isDatFileAlreadyKnown(entry.fullPath)
+    );
     await this.indexDatset(entries);
   }
 
@@ -38,14 +40,14 @@ export class TosecCatalog implements ICatalog {
   private async indexDatset(entries: EntryInfo[]): Promise<void> {
     const numberOfDats = entries.length;
     await this.taskList.withTask(
-      new SimpleTask(`Loading ${numberOfDats} datsets...`),
+      new SimpleTask(`Parsing ${numberOfDats} datsets...`),
       async (update: TaskUpdate) => {
         let iteration = 0;
         for (const { fullPath: filepath } of entries) {
           await this.indexDatFile(filepath);
-          update(`Loading datsets (${++iteration} / ${numberOfDats})...`);
+          update(`Parsing datsets (${++iteration} / ${numberOfDats})...`);
         }
-        update(`Loaded ${iteration} datsets.`);
+        update(`Parsed ${iteration} datsets.`);
       }
     );
   }

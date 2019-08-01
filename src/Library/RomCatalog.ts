@@ -13,7 +13,7 @@ import { TaskList, TaskUpdate } from "./TaskList/TaskList";
 
 export class RomCatalog implements ICatalog {
   constructor(
-    private filepath: string,
+    private filepaths: string[],
     private taskList: TaskList,
     private storage: DataStorage,
     private mimeTypeResolver: MimeTypeResolver,
@@ -21,21 +21,28 @@ export class RomCatalog implements ICatalog {
   ) {}
 
   public async createIndex(): Promise<void> {
-    let entries = await this.getRomListEntries(this.filepath);
+    let entries = (await this.getRomListEntries(this.filepaths)).filter(
+      (entry: EntryInfo) => !this.storage.isRomAlreadyKnown(entry.fullPath)
+    );
     await this.analyseRomEntries(entries);
     entries = undefined; // Allow GC to cleanup possibly large list of file entries
     await this.updateRomHashes();
   }
 
-  private async getRomListEntries(filepath: string) {
+  private async getRomListEntries(filepaths: string[]): Promise<EntryInfo[]> {
     return await this.taskList.withTask(
       new SimpleTask("Scanning roms..."),
       async (update: TaskUpdate) => {
-        const entries = await readdirp.promise(filepath, {
-          type: "files"
-        });
-        update(`Scanned ${entries.length} roms.`);
-        return entries;
+        let combinedEntries = [];
+        for (const filepath of filepaths) {
+          update(`Scanning roms from ${filepath}`);
+          const entries = await readdirp.promise(filepath, {
+            type: "files"
+          });
+          combinedEntries = combinedEntries.concat(entries);
+        }
+        update(`Scanned ${combinedEntries.length} roms.`);
+        return combinedEntries;
       }
     );
   }
@@ -61,9 +68,7 @@ export class RomCatalog implements ICatalog {
           update(`Analysing rom (${i} / ${numberOfFiles}): ${entry.basename}`);
         }
 
-        const count = this.storage.getNumberOfRoms();
-        update(`Analysed ${count} roms.`);
-        return count;
+        update(`Analysed ${numberOfFiles} roms.`);
       }
     );
   }
