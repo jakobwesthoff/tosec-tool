@@ -1,5 +1,6 @@
 import { Database, Statement } from "better-sqlite3";
 import * as fse from "fs-extra";
+import { basename } from "path";
 import { exists } from "./FileAccess";
 import { HashedFile } from "./HashGenerator";
 import { SimpleTask } from "./TaskList/SimpleTask";
@@ -50,6 +51,13 @@ export interface StorageStats {
 }
 
 export class DataStorage {
+  private readonly TABLES_TO_PERSIST = [
+    "roms",
+    "tosec_dats",
+    "tosec_games",
+    "tosec_roms"
+  ];
+
   private romInsertStatement: Statement | undefined;
   private updateRomHashesStatement: Statement | undefined;
   private datInsertStatement: Statement | undefined;
@@ -194,6 +202,8 @@ export class DataStorage {
       throw new Error(`Database file ${filename} is not readable.`);
     }
 
+    const dbFile = basename(filename);
+
     try {
       const attachStatement = this.database.prepare(
         `ATTACH @filename as storage`
@@ -204,26 +214,21 @@ export class DataStorage {
     }
 
     await this.taskList.withTask(
-      new SimpleTask(`Loading stored database...`),
+      new SimpleTask(`Loading database from ${dbFile}...`),
       async (update: TaskUpdate) => {
-        const tables = ["roms", "tosec_dats", "tosec_games", "tosec_roms"];
-        tables.forEach((destination: string, index: number) => {
+        const tables = this.TABLES_TO_PERSIST;
+        for (let i = 0; i < tables.length; i++) {
           update(
-            `Loading stored database (${index + 1} / ${tables.length})...`
+            `Loading database from ${dbFile} (${i + 1} / ${tables.length})...`
           );
-          const source = `storage.${destination}`;
           try {
-            const transferStatement = this.database
-              .prepare(`INSERT INTO ${destination}
-                                                     SELECT *
-                                                     FROM ${source}`);
-            transferStatement.run();
+            await this.transferTable(`storage.${tables[i]}`, tables[i], true);
           } catch (error) {
             throw new Error(
               `Database file could not be read: ${error.message}`
             );
           }
-        });
+        }
       }
     );
 
@@ -242,27 +247,76 @@ export class DataStorage {
     attachStatement.run({ filename });
 
     this.createTables("storage");
-
+    const dbfile = basename(filename);
     await this.taskList.withTask(
-      new SimpleTask(`Storing database to file...`),
+      new SimpleTask(`Storing database to ${dbfile}...`),
       async (update: TaskUpdate) => {
-        const tables = ["roms", "tosec_dats", "tosec_games", "tosec_roms"];
-        tables.forEach((source: string, index: number) => {
+        const tables = this.TABLES_TO_PERSIST;
+        for (let i = 0; i < tables.length; i++) {
           update(
-            `Storing database to file (${index + 1} / ${tables.length})...`
+            `Storing database to ${dbfile} (${i + 1} / ${tables.length})...`
           );
-          const destination = `storage.${source}`;
-          const transferStatement = this.database
-            .prepare(`INSERT INTO ${destination}
-                                                     SELECT *
-                                                     FROM ${source}`);
-          transferStatement.run();
-        });
+          await this.transferTable(tables[i], `storage.${tables[i]}`, false);
+        }
       }
     );
 
     const detachStatement = this.database.prepare(`DETACH storage`);
     detachStatement.run();
+  }
+
+  private async transferTable(
+    source: string,
+    target: string,
+    load: boolean = true,
+    chunkSize?: number
+  ): Promise<void> {
+    let stmt: Statement;
+    let cleanedSource = source.split(".").pop();
+    let cleanedTarget = target.split(".").pop();
+
+    if (chunkSize === undefined) {
+      chunkSize = this.database.pragma("page_size", { simple: true }) * 2;
+    }
+
+    await this.taskList.withTask(
+      new SimpleTask(
+        `Preparing to ${load ? "load" : "store"} ${cleanedSource}...`
+      ),
+      async (update: TaskUpdate) => {
+        this.database.exec(`BEGIN`);
+        stmt = this.database.prepare(
+          `
+      SELECT COUNT(*) as count from ${source};
+      `
+        );
+        const { count } = stmt.get();
+        let transfered = 0;
+
+        stmt = this.database.prepare(`INSERT INTO ${target}
+                                                     SELECT *
+                                                     FROM ${source} LIMIT ${chunkSize} OFFSET @offset`);
+
+        while (transfered < count) {
+          update(
+            `${load ? "Loading" : "Storing"} ${cleanedTarget} (${Math.round(
+              (transfered / count) * 100
+            )}%)...`
+          );
+          await new Promise<void>(
+            (resolve: (value?: PromiseLike<void> | void) => void) => {
+              setImmediate(() => {
+                stmt.run({ offset: transfered });
+                transfered += chunkSize;
+                resolve();
+              });
+            }
+          );
+        }
+        this.database.exec(`COMMIT`);
+        update(null);
+      }
+    );
   }
 
   public storeRomFile(rom: RomFile): void {
