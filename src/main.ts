@@ -1,7 +1,8 @@
 import * as Database from "better-sqlite3";
+import * as fse from "fs-extra";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
-import { exists } from "./Library/FileAccess";
+import { exists, isReadable } from "./Library/FileAccess";
 import { HashGenerator } from "./Library/HashGenerator";
 import { MimeTypeResolver } from "./Library/MimeTypeResolver";
 import { RomCatalog } from "./Library/RomCatalog";
@@ -43,35 +44,50 @@ if (cli.input.length < 1 || !cli.flags.datsets || !cli.flags.output) {
 }
 (async () => {
   const taskList = new TaskList();
-
-  const inMemoryDatabase = new Database("", {
-    memory: true
-  });
-  const storage = new DataStorage(inMemoryDatabase, taskList);
-  await storage.initialize();
-
-  const mimeTypeResolver = new MimeTypeResolver();
-
-  const hashGenerator = new HashGenerator();
-
-  const romsCatalog = new RomCatalog(
-    cli.input,
-    taskList,
-    storage,
-    mimeTypeResolver,
-    hashGenerator
-  );
-
-  const datParser = new TosecDatParser();
-  const tosecCatalog = new TosecCatalog(
-    cli.flags.datsets,
-    taskList,
-    storage,
-    datParser
-  );
-
-  taskList.start();
   try {
+    const inputDirectories = cli.input;
+    for (const inputDirectory of inputDirectories) {
+      if (!(await isReadable(inputDirectory))) {
+        throw new Error(`Input path ${inputDirectory} can not be read.`);
+      }
+    }
+
+    if (await exists(cli.flags.output)) {
+      throw new Error(
+        `Output directory ${cli.flags.output} does already exist. Aborting.`
+      );
+    }
+
+    await fse.mkdir(cli.flags.output);
+
+    const inMemoryDatabase = new Database("", {
+      memory: true
+    });
+    const storage = new DataStorage(inMemoryDatabase, taskList);
+    await storage.initialize();
+
+    const mimeTypeResolver = new MimeTypeResolver();
+
+    const hashGenerator = new HashGenerator();
+
+    const romsCatalog = new RomCatalog(
+      cli.input,
+      taskList,
+      storage,
+      mimeTypeResolver,
+      hashGenerator
+    );
+
+    const datParser = new TosecDatParser();
+    const tosecCatalog = new TosecCatalog(
+      cli.flags.datsets,
+      taskList,
+      storage,
+      datParser
+    );
+
+    taskList.start();
+
     if (cli.flags.storage) {
       if (!(await exists(cli.flags.storage))) {
         taskList.addTask(
