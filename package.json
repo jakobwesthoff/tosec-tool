@@ -33,10 +33,12 @@
   "author": "Jakob Westhoff <jakob@westhoffswelt.de> (http://westhoffswelt.de)",
   "license": "MIT",
   "dependencies": {
+    "@types/fs-extra": "^8.0.0",
     "better-sqlite3": "^5.4.1",
     "chalk": "^2.4.2",
     "crc": "^3.8.0",
     "file-type": "^12.1.0",
+    "fs-extra": "^8.1.0",
     "log-symbols": "^3.0.0",
     "log-update": "^3.2.0",
     "meow": "^5.0.0",

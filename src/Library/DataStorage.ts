@@ -1,4 +1,5 @@
 import { Database, Statement } from "better-sqlite3";
+import * as fse from "fs-extra";
 import { HashedFile } from "./HashGenerator";
 import { SimpleTask } from "./TaskList/SimpleTask";
 import { TaskList, TaskUpdate } from "./TaskList/TaskList";
@@ -50,6 +51,7 @@ export class DataStorage {
 
   public initialize(): void {
     this.createTables();
+    this.createIndices();
 
     this.romInsertStatement = this.database.prepare(
       `
@@ -91,61 +93,69 @@ export class DataStorage {
     );
   }
 
-  private createTables(): void {
+  private createIndices(): void {
     this.database.exec(`
-        CREATE TABLE roms
-        (
-            id        INTEGER PRIMARY KEY,
-            filepath  TEXT NOT NULL,
-            sha1      BLOB DEFAULT NULL,
-            md5       BLOB DEFAULT NULL,
-            crc32     BLOB DEFAULT NULL,
-            extension TEXT DEFAULT NULL,
-            mimetype  TEXT DEFAULT NULL
-        );
         CREATE UNIQUE INDEX idx_roms_filepath ON roms (filepath);
         CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32);
-        -- CREATE INDEX idx_roms_mimetypes ON roms (mimetype);
 
-        CREATE TABLE tosec_dats
-        (
-            id          INTEGER PRIMARY KEY,
-            filepath    TEXT NOT NULL,
-            name        TEXT NOT NULL,
-            description TEXT NULL,
-            category    TEXT NOT NULL,
-            version     TEXT NOT NULL,
-            author      TEXT NULL,
-            email       TEXT NULL,
-            homepage    TEXT NULL,
-            url         TEXT NULL
-        );
         CREATE UNIQUE INDEX idx_tosec_dats_filepath ON tosec_dats (filepath);
 
-        CREATE TABLE tosec_games
-        (
-            id          INTEGER PRIMARY KEY,
-            datid       INTEGER NOT NULL,
-            name        TEXT    NOT NULL,
-            description TEXT    NOT NULL,
-            FOREIGN KEY (datid) REFERENCES tosec_dats (id)
-        );
         CREATE INDEX idx_tosec_games_datids ON tosec_games (datid);
 
-        CREATE TABLE tosec_roms
-        (
-            id     INTEGER PRIMARY KEY,
-            gameid INTEGER NOT NULL,
-            name   TEXT    NOT NULL,
-            size   INTEGER NOT NULL,
-            crc32  BLOB    NOT NULL,
-            md5    BLOB    NOT NULL,
-            sha1   BLOB    NOT NULL,
-            FOREIGN KEY (gameid) REFERENCES tosec_games (id)
-        );
         CREATE INDEX idx_tosec_roms_hashes ON tosec_roms (sha1, md5, crc32);
         CREATE INDEX idx_tosec_roms_gameids ON tosec_roms (gameid);
     `);
+  }
+
+  private createTables(databaseName?: string): void {
+    const prefix = databaseName === undefined ? "" : `${databaseName}.`;
+    this.database.exec(`
+      CREATE TABLE ${prefix}roms
+      (
+          id        INTEGER PRIMARY KEY,
+          filepath  TEXT NOT NULL,
+          sha1      BLOB DEFAULT NULL,
+          md5       BLOB DEFAULT NULL,
+          crc32     BLOB DEFAULT NULL,
+          extension TEXT DEFAULT NULL,
+          mimetype  TEXT DEFAULT NULL
+      );
+
+      CREATE TABLE ${prefix}tosec_dats
+      (
+          id          INTEGER PRIMARY KEY,
+          filepath    TEXT NOT NULL,
+          name        TEXT NOT NULL,
+          description TEXT NULL,
+          category    TEXT NOT NULL,
+          version     TEXT NOT NULL,
+          author      TEXT NULL,
+          email       TEXT NULL,
+          homepage    TEXT NULL,
+          url         TEXT NULL
+      );
+
+      CREATE TABLE ${prefix}tosec_games
+      (
+          id          INTEGER PRIMARY KEY,
+          datid       INTEGER NOT NULL,
+          name        TEXT    NOT NULL,
+          description TEXT    NOT NULL,
+          FOREIGN KEY (datid) REFERENCES tosec_dats (id)
+      );
+
+      CREATE TABLE ${prefix}tosec_roms
+      (
+          id     INTEGER PRIMARY KEY,
+          gameid INTEGER NOT NULL,
+          name   TEXT    NOT NULL,
+          size   INTEGER NOT NULL,
+          crc32  BLOB    NOT NULL,
+          md5    BLOB    NOT NULL,
+          sha1   BLOB    NOT NULL,
+          FOREIGN KEY (gameid) REFERENCES tosec_games (id)
+      );
+  `);
   }
 
   public async loadFromStorage(filename: string): Promise<void> {
@@ -154,18 +164,20 @@ export class DataStorage {
     );
     attachStatement.run({ filename });
 
-    const transferStatement = this.database.prepare(`INSERT INTO @destination
-                                                     SELECT *
-                                                     FROM @ source`);
     await this.taskList.withTask(
       new SimpleTask(`Loading stored database...`),
       async (update: TaskUpdate) => {
         const tables = ["roms", "tosec_dats", "tosec_games", "tosec_roms"];
         tables.forEach((destination: string, index: number) => {
-          update(`Loading stored database (${index} / ${tables.length})...`);
-          transferStatement.run({
-            source: `storage.${destination}, destination`
-          });
+          update(
+            `Loading stored database (${index + 1} / ${tables.length})...`
+          );
+          const source = `storage.${destination}`;
+          const transferStatement = this.database
+            .prepare(`INSERT INTO ${destination}
+                                                     SELECT *
+                                                     FROM ${source}`);
+          transferStatement.run();
         });
       }
     );
@@ -175,24 +187,31 @@ export class DataStorage {
   }
 
   public async saveToStorage(filename: string): Promise<void> {
+    if (fse.existsSync(filename)) {
+      await fse.unlink(filename);
+    }
+
     const attachStatement = this.database.prepare(
       `ATTACH @filename as storage`
     );
     attachStatement.run({ filename });
 
-    const transferStatement = this.database.prepare(`INSERT INTO @destination
-                                                     SELECT *
-                                                     FROM @ source`);
+    this.createTables("storage");
+
     await this.taskList.withTask(
       new SimpleTask(`Storing database to file...`),
       async (update: TaskUpdate) => {
         const tables = ["roms", "tosec_dats", "tosec_games", "tosec_roms"];
         tables.forEach((source: string, index: number) => {
-          update(`Storing database to file (${index} / ${tables.length})...`);
-          transferStatement.run({
-            source,
-            destination: `storage.${source}`
-          });
+          update(
+            `Storing database to file (${index + 1} / ${tables.length})...`
+          );
+          const destination = `storage.${source}`;
+          const transferStatement = this.database
+            .prepare(`INSERT INTO ${destination}
+                                                     SELECT *
+                                                     FROM ${source}`);
+          transferStatement.run();
         });
       }
     );
