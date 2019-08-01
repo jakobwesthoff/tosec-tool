@@ -18,12 +18,23 @@ const cli = meow(
 	Usage
 	  $ tosec-sorter -t <dataset-dir> -o <output-dir> [-s <storage-file>] <input-dirs...>
 
+  Options:
+    -t | --tosec: Directory where the TOSEC Datset (Collection of dat files)
+                  to match all input roms against can be found.
+                  
+    -o | --output: Directory to store the sorted and matched files in
+    
+    -s | --storage: File to store/load hashed and analysed results to/from.
+                    Using a persistent database speeds up multiple runs
+                    quite significant. Database files can however be quite
+                    large (>500MiB).
+
 	Examples
 	  $ tosec-sorter -t ./datasets -o ./sorted-output -s index.db ./source-1 ./source-2
 `,
   {
     flags: {
-      datsets: {
+      tosec: {
         type: "string",
         alias: "t"
       },
@@ -39,7 +50,7 @@ const cli = meow(
   }
 );
 
-if (cli.input.length < 1 || !cli.flags.datsets || !cli.flags.output) {
+if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
   cli.showHelp();
 }
 (async () => {
@@ -80,7 +91,7 @@ if (cli.input.length < 1 || !cli.flags.datsets || !cli.flags.output) {
 
     const datParser = new TosecDatParser();
     const tosecCatalog = new TosecCatalog(
-      cli.flags.datsets,
+      cli.flags.tosec,
       taskList,
       storage,
       datParser
