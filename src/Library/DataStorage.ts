@@ -50,6 +50,19 @@ export interface StorageStats {
   numberOfTosecRoms: number;
 }
 
+export interface MatchResult {
+  romFilepath: string;
+  romExtension: string;
+  romMimetype: string;
+  tosecDatFilepath: string;
+  tosecDatName: string;
+  tosecDatDescription: string;
+  tosecDatCategory: string;
+  tosecGameName: string;
+  tosecGameDescription: string;
+  tosecRomName: string;
+}
+
 export class DataStorage {
   private readonly TABLES_TO_PERSIST: string[] = [
     "roms",
@@ -69,9 +82,11 @@ export class DataStorage {
   private listOfRomFilepathsStatement: Statement | undefined;
   private removeDatFileStatement: Statement | undefined;
   private removeRomFileStatement: Statement | undefined;
+  private getTosecForRomStatement: Statement | undefined;
 
   constructor(private database: Database, private taskList: TaskList) {}
 
+  // tslint:disable-next-line:max-func-body-length
   public initialize(): void {
     this.createTables();
     this.createIndices();
@@ -161,6 +176,27 @@ export class DataStorage {
                 DELETE
                 FROM roms
                 WHERE filepath = @filepath
+      `
+    );
+
+    this.getTosecForRomStatement = this.database.prepare(
+      `
+                SELECT r.filepath     as romFilepath,
+                       r.extension    as romExtension,
+                       r.mimetype     as romMimetype,
+                       td.filepath    as tosecDatFilepath,
+                       td.name        as tosecDatName,
+                       td.description as tosecDatDescription,
+                       td.category    as tosecDatCategory,
+                       tg.name        as tosecGameName,
+                       tg.description as tosecGameDescription,
+                       tr.name        as tosecRomName
+                FROM roms AS r
+                         INNER JOIN tosec_roms AS tr ON r.sha1 = tr.sha1 AND r.md5 = tr.md5 AND
+                                                        r.crc32 = tr.crc32
+                         INNER JOIN tosec_games AS tg ON tr.gameid = tg.id
+                         INNER JOIN tosec_dats AS td ON tg.datid = td.id
+                WHERE r.filepath = @filepath
       `
     );
   }
@@ -512,6 +548,10 @@ export class DataStorage {
       numberOfTosecGames,
       numberOfTosecRoms
     };
+  }
+
+  public async getTosecMatchForRom(filepath: string): Promise<MatchResult|undefined> {
+    return this.getTosecForRomStatement.get({ filepath });
   }
 
   private hexToBuffer(hex: string): Buffer {

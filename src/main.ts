@@ -1,11 +1,11 @@
 import * as Database from "better-sqlite3";
-import * as fse from "fs-extra";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
 import { exists, isReadable } from "./Library/FileAccess";
 import { HashGenerator } from "./Library/HashGenerator";
 import { MimeTypeResolver } from "./Library/MimeTypeResolver";
 import { RomCatalog } from "./Library/RomCatalog";
+import { Sorter } from "./Library/Sorter";
 import { SimpleTask } from "./Library/TaskList/SimpleTask";
 import { StaticInfoTask } from "./Library/TaskList/StaticInfoTask";
 import { TaskList, TaskUpdate } from "./Library/TaskList/TaskList";
@@ -68,8 +68,6 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
         `Output directory ${cli.flags.output} does already exist. Aborting.`
       );
     }
-
-    await fse.mkdir(cli.flags.output);
 
     const inMemoryDatabase = new Database("", {
       memory: true
@@ -134,6 +132,10 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
     if (cli.flags.storage) {
       await storage.saveFile(cli.flags.storage);
     }
+
+    const sorter = new Sorter(taskList, storage, cli.flags.output);
+    await sorter.sort();
+
     taskList.stop();
   } catch (error) {
     taskList.stop();
