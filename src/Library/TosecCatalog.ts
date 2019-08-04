@@ -52,10 +52,17 @@ export class TosecCatalog implements ICatalog {
             })`
           );
           await new Promise<void>(
-            (resolve: (value?: PromiseLike<void> | void) => void) =>
+            (
+              resolve: (value?: PromiseLike<void> | void) => void,
+              reject: (reason?: any) => void
+            ) =>
               setImmediate(async () => {
-                await this.storage.removeDatFileRecursive(removedDatFiles[i]);
-                resolve();
+                try {
+                  await this.storage.removeDatFileRecursive(removedDatFiles[i]);
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
               })
           );
         }
@@ -81,14 +88,14 @@ export class TosecCatalog implements ICatalog {
   private async indexDatset(entries: EntryInfo[]): Promise<void> {
     const numberOfDats = entries.length;
     await this.taskList.withTask(
-      new SimpleTask(`Parsing ${numberOfDats} datsets...`),
+      new SimpleTask(`Parsing ${numberOfDats} new datsets...`),
       async (update: TaskUpdate) => {
         let iteration = 0;
         for (const { fullPath: filepath } of entries) {
           await this.indexDatFile(filepath);
-          update(`Parsing datsets (${++iteration} / ${numberOfDats})...`);
+          update(`Parsing new datsets (${++iteration} / ${numberOfDats})...`);
         }
-        update(`Parsed ${iteration} datsets.`);
+        update(`Parsed ${iteration} new datsets.`);
       }
     );
   }

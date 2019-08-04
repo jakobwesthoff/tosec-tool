@@ -12,6 +12,7 @@
     "@types/meow": "^5.0.0",
     "@types/node": "^10.14.10",
     "@types/sax": "^1.2.0",
+    "@types/unzipper": "^0.10.0",
     "jest": "~24.8.0",
     "prettier": "~1.18.2",
     "rimraf": "^2.6.3",
@@ -20,6 +21,7 @@
     "tslint-config-prettier": "1.18.0",
     "tslint-microsoft-contrib": "~6.2.0",
     "tsutils": "~3.14.0",
+    "@types/fs-extra": "^8.0.0",
     "typescript": "~3.5.0"
   },
   "scripts": {
@@ -33,7 +35,6 @@
   "author": "Jakob Westhoff <jakob@westhoffswelt.de> (http://westhoffswelt.de)",
   "license": "MIT",
   "dependencies": {
-    "@types/fs-extra": "^8.0.0",
     "better-sqlite3": "^5.4.1",
     "chalk": "^2.4.2",
     "crc": "^3.8.0",
@@ -48,6 +49,6 @@
     "readdirp": "^3.1.1",
     "sax": "^1.2.4",
     "tslib": "~1.10.0",
-    "unzip-stream": "^0.3.0"
+    "unzipper": "^0.10.2"
   }
 }

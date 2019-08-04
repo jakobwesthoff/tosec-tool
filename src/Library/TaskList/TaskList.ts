@@ -31,8 +31,16 @@ export class TaskList {
     this.ora = ora();
   }
 
-  public addTask(task: ITask) {
-    this.tasks.push(task);
+  public addTask(task: ITask, relativePosition: number = 0) {
+    if (relativePosition > 0) {
+      relativePosition = 0;
+    }
+
+    if (relativePosition < this.tasks.length * -1) {
+      relativePosition = this.tasks.length * -1;
+    }
+
+    this.tasks.splice(this.tasks.length + relativePosition, 0, task);
   }
 
   public async withTask<T>(

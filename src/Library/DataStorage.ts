@@ -83,6 +83,7 @@ export class DataStorage {
   private removeDatFileStatement: Statement | undefined;
   private removeRomFileStatement: Statement | undefined;
   private getTosecForRomStatement: Statement | undefined;
+  private updateRomCorruptedStatement: Statement | undefined;
 
   constructor(private database: Database, private taskList: TaskList) {}
 
@@ -126,6 +127,14 @@ export class DataStorage {
                 SET sha1=@sha1,
                     md5=@md5,
                     crc32=@crc32
+                WHERE filepath = @filepath
+      `
+    );
+
+    this.updateRomCorruptedStatement = this.database.prepare(
+      `
+                UPDATE roms
+                SET corrupted=@reason
                 WHERE filepath = @filepath
       `
     );
@@ -197,6 +206,7 @@ export class DataStorage {
                          INNER JOIN tosec_games AS tg ON tr.gameid = tg.id
                          INNER JOIN tosec_dats AS td ON tg.datid = td.id
                 WHERE r.filepath = @filepath
+                  AND r.corrupted IS NULL
       `
     );
   }
@@ -204,7 +214,7 @@ export class DataStorage {
   private createIndices(): void {
     this.database.exec(`
         CREATE UNIQUE INDEX idx_roms_filepath ON roms (filepath);
-        CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32);
+        CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32, corrupted);
         CREATE INDEX idx_roms_mimetype ON roms (mimetype);
 
         CREATE UNIQUE INDEX idx_tosec_dats_filepath ON tosec_dats (filepath);
@@ -227,7 +237,8 @@ export class DataStorage {
           md5       BLOB DEFAULT NULL,
           crc32     BLOB DEFAULT NULL,
           extension TEXT DEFAULT NULL,
-          mimetype  TEXT DEFAULT NULL
+          mimetype  TEXT DEFAULT NULL,
+          corrupted TEXT DEFAULT NULL
       );
 
       CREATE TABLE ${prefix}tosec_dats
@@ -380,11 +391,18 @@ export class DataStorage {
             )}%)...`
           );
           await new Promise<void>(
-            (resolve: (value?: PromiseLike<void> | void) => void) => {
+            (
+              resolve: (value?: PromiseLike<void> | void) => void,
+              reject: (reason?: any) => void
+            ) => {
               setImmediate(() => {
-                stmt.run({ offset: transfered });
-                transfered += chunkSize;
-                resolve();
+                try {
+                  stmt.run({ offset: transfered });
+                  transfered += chunkSize;
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
               });
             }
           );
@@ -422,14 +440,17 @@ export class DataStorage {
     return count;
   }
 
-  public getRomsWithoutHashes(limit: number = 512): RomFile[] {
+  public getUncorruptedRomsWithoutHashes(limit: number = 512): RomFile[] {
     const stmt = this.database.prepare(
       `
                 SELECT *
                 FROM roms
-                WHERE sha1 IS NULL
-                   OR md5 IS NULL
-                   OR crc32 IS NULL
+                WHERE (
+                        sha1 IS NULL
+                        OR md5 IS NULL
+                        OR crc32 IS NULL
+                    )
+                  AND corrupted IS NULL
                 LIMIT @limit
       `
     );
@@ -444,6 +465,13 @@ export class DataStorage {
       md5: this.hexToBuffer(hashes.md5),
       sha1: this.hexToBuffer(hashes.sha1),
       filepath
+    });
+  }
+
+  public storeCorruptionForRom(filepath: string, reason: string): void {
+    this.updateRomCorruptedStatement.run({
+      filepath,
+      reason
     });
   }
 
@@ -550,7 +578,9 @@ export class DataStorage {
     };
   }
 
-  public async getTosecMatchForRom(filepath: string): Promise<MatchResult|undefined> {
+  public async getTosecMatchForRom(
+    filepath: string
+  ): Promise<MatchResult | undefined> {
     return this.getTosecForRomStatement.get({ filepath });
   }
 

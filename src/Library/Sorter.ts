@@ -22,20 +22,28 @@ export class Sorter {
         for (let i = 0; i < roms.length; i++) {
           update(`Sorting (${i + 1} / ${roms.length})...`);
           await new Promise<void>(
-            (resolve: (value?: PromiseLike<void> | void) => void) =>
+            (
+              resolve: (value?: PromiseLike<void> | void) => void,
+              reject: (reason?: any) => void
+            ) =>
               setImmediate(async () => {
                 const match = await this.storage.getTosecMatchForRom(roms[i]);
                 if (match === undefined) {
-                  return resolve(); // No match found just skip.
+                  await this.persistUnknown(roms[i]);
+                  return resolve();
                 }
 
-                if (await this.persistMatch(match)) {
-                  sortedCount++;
-                } else {
-                  duplicateCount++;
-                }
+                try {
+                  if (await this.persistMatch(match)) {
+                    sortedCount++;
+                  } else {
+                    duplicateCount++;
+                  }
 
-                resolve();
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
               })
           );
         }
@@ -58,13 +66,31 @@ export class Sorter {
     }
 
     await this.ensureDirectoryExists(targetDirectory);
-    await this.copyMatchToTarget(targetFilepath, match);
+    await this.copy(match.romFilepath, targetFilepath);
+
+    return true;
+  }
+
+  private async persistUnknown(filepath: string): Promise<boolean> {
+    const targetFilepath = this.getFilepathForUnknown(filepath);
+    const targetDirectory = path.dirname(filepath);
+
+    if (await exists(targetFilepath)) {
+      return false;
+    }
+
+    await this.ensureDirectoryExists(targetDirectory);
+    await this.copy(filepath, targetFilepath);
 
     return true;
   }
 
   private getDirectoryForMatch(match: MatchResult): string {
     return `${this.outputDirectory}/${match.tosecDatName}`;
+  }
+
+  private getFilepathForUnknown(filepath: string) {
+    return `${this.outputDirectory}/__UNKNOWN__/${filepath}`;
   }
 
   private getFilepathForMatch(match: MatchResult): string {
@@ -83,10 +109,7 @@ export class Sorter {
     await fse.ensureDir(directory);
   }
 
-  private async copyMatchToTarget(
-    filepath: string,
-    match: MatchResult
-  ): Promise<void> {
-    await fse.copy(match.romFilepath, filepath);
+  private async copy(source: string, target: string): Promise<void> {
+    await fse.copy(source, target);
   }
 }

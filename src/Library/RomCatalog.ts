@@ -3,14 +3,15 @@ import { filterSeries } from "p-iteration";
 import { basename } from "path";
 import * as readdirp from "readdirp";
 import { Readable } from "stream";
+import * as unzipper from "unzipper";
 import { DataStorage } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
 import { exists } from "./FileAccess";
-import { FirstFileUnzipStream } from "./FirstFileUnzipStream";
 import { HashGenerator } from "./HashGenerator";
 import { ICatalog } from "./ICatalog";
 import { MimeTypeResolver } from "./MimeTypeResolver";
 import { SimpleTask } from "./TaskList/SimpleTask";
+import { StaticWarningTask } from "./TaskList/StaticWarningTask";
 import { TaskList, TaskUpdate } from "./TaskList/TaskList";
 
 export class RomCatalog implements ICatalog {
@@ -58,10 +59,17 @@ export class RomCatalog implements ICatalog {
             })...`
           );
           await new Promise<void>(
-            (resolve: (value?: PromiseLike<void> | void) => void) =>
+            (
+              resolve: (value?: PromiseLike<void> | void) => void,
+              reject: (reason?: any) => void
+            ) =>
               setImmediate(async () => {
-                await this.storage.removeRomFile(removedRomFiles[i]);
-                resolve();
+                try {
+                  await this.storage.removeRomFile(removedRomFiles[i]);
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
               })
           );
         }
@@ -90,7 +98,7 @@ export class RomCatalog implements ICatalog {
 
   private async analyseRomEntries(entries: EntryInfo[]) {
     await this.taskList.withTask(
-      new SimpleTask("Analysing roms..."),
+      new SimpleTask("Analysing new roms..."),
       async (update: TaskUpdate) => {
         const numberOfFiles = entries.length;
         for (let i = 0; i < numberOfFiles; i++) {
@@ -106,10 +114,12 @@ export class RomCatalog implements ICatalog {
             extension: fileType.ext,
             mimetype: fileType.mime
           });
-          update(`Analysing rom (${i} / ${numberOfFiles}): ${entry.basename}`);
+          update(
+            `Analysing new rom (${i} / ${numberOfFiles}): ${entry.basename}`
+          );
         }
 
-        update(`Analysed ${numberOfFiles} roms.`);
+        update(`Analysed ${numberOfFiles} new roms.`);
       }
     );
   }
@@ -130,15 +140,29 @@ export class RomCatalog implements ICatalog {
         let iteration = 0;
         // tslint:disable-next-line:no-constant-condition
         while (true) {
-          const rows = this.storage.getRomsWithoutHashes();
+          const rows = this.storage.getUncorruptedRomsWithoutHashes();
           if (rows.length === 0) {
             break;
           }
 
           for (const { filepath, mimetype } of rows) {
             const fileStream = this.createReadableForFile(filepath, mimetype);
-            const hashes = await this.hashGenerator.hash(fileStream);
-            this.storage.storeHashesForRom(filepath, hashes);
+            let hashes;
+            try {
+              hashes = await this.hashGenerator.hash(fileStream);
+            } catch (error) {
+              this.storage.storeCorruptionForRom(filepath, error.message);
+              this.taskList.addTask(
+                new StaticWarningTask(
+                  `Could not hash file ${filepath}: ${error.message}`
+                ),
+                -1
+              );
+            }
+
+            if (hashes !== undefined) {
+              this.storage.storeHashesForRom(filepath, hashes);
+            }
             update(
               `Hashing roms (${++iteration} / ${count}): ${basename(filepath)}`
             );
@@ -150,10 +174,11 @@ export class RomCatalog implements ICatalog {
   }
 
   private createReadableForFile(filepath: string, mimetype: string): Readable {
+    const readStream = createReadStream(filepath, { autoClose: true });
     if (mimetype === "application/zip") {
-      return new FirstFileUnzipStream(filepath);
+      return readStream.pipe(unzipper.ParseOne(undefined, undefined));
     } else {
-      return createReadStream(filepath, { autoClose: true });
+      return readStream;
     }
   }
 }
