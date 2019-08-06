@@ -1,9 +1,13 @@
 {
-  "name": "tosec-sorter",
+  "name": "tosec-tool",
   "version": "1.0.0",
-  "description": "Sort rom files using TOSEC DatSets into an appropriate directory structure",
+  "description": "Tooling for usage with the TOSEC datasets and corresponding files.",
   "engines": {
     "node": ">= 12 <13"
+  },
+  "bin": {
+    "tosec": "./build/src/tosec.js",
+    "tosec-sort": "./build/src/tosec-sort.js"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^5.4.0",
@@ -26,11 +30,12 @@
   },
   "scripts": {
     "clean": "rimraf coverage build tmp",
-    "build": "tsc -p tsconfig.release.json",
+    "build": "npm run clean && tsc -p tsconfig.release.json",
     "build:watch": "tsc -w -p tsconfig.release.json",
     "lint": "tslint -t stylish --project \"tsconfig.json\"",
     "test": "jest --coverage",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "prepublish": "npm run build"
   },
   "author": "Jakob Westhoff <jakob@westhoffswelt.de> (http://westhoffswelt.de)",
   "license": "MIT",

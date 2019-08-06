@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import * as Database from "better-sqlite3";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
@@ -16,7 +18,7 @@ import logSymbols = require("log-symbols");
 const cli = meow(
   `
 	Usage
-	  $ tosec-sorter -t <dataset-dir> -o <output-dir> [-s <storage-file>] <input-dirs...>
+	  $ tosec sort -t <dataset-dir> -o <output-dir> [-s <storage-file>] <input-dirs...>
 
   Options:
     -t | --tosec: Directory where the TOSEC Datset (Collection of dat files)
@@ -28,7 +30,16 @@ const cli = meow(
                     Using a persistent database speeds up multiple runs
                     quite significant. Database files can however be quite
                     large (>500MiB).
-
+                    
+  Information:
+    Plain rom files will be hashed as they are. If rom files are zipped, the
+    hash will be calculated based on the first file found in the archive.
+    Therefore there is no need to decompress rom files before sorting them.
+    
+    Sorted files are currently copied over and renamed to their target
+    location. Therefore possibly double the size of the input files is needed
+    to be available for storage. 
+    
 	Examples
 	  $ tosec-sorter -t ./datasets -o ./sorted-output -s index.db ./source-1 ./source-2
 `,
@@ -140,5 +151,6 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
   } catch (error) {
     taskList.stop();
     process.stderr.write(`${logSymbols.error} ${error.message}\n`);
+    process.exit(130);
   }
 })();
