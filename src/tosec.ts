@@ -36,10 +36,13 @@ ${commands
 	Examples
 	  $ tosec sorter --help
 `,
-  {}
+  {
+    autoHelp: false
+  }
 );
 
 if (cli.input.length < 1) {
+  // Matches on single --help as well.
   cli.showHelp();
 }
 
@@ -55,6 +58,4 @@ const commandChild = spawn(`tosec-${cli.input[0]}`, process.argv.slice(3), {
   env: process.env,
   stdio: ["inherit", "inherit", "inherit"]
 });
-// commandChild.stdout.on("data", (data: Buffer) => process.stdout.write(data));
-// commandChild.stderr.on("data", (data: Buffer) => process.stderr.write(data));
 commandChild.on("exit", (code: number) => process.exit(code));
