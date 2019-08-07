@@ -1,7 +1,12 @@
 {
   "name": "tosec-tool",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Tooling for usage with the TOSEC datasets and corresponding files.",
+  "keywords": ["retro", "emulation", "rom", "amiga", "c64", "tosec", "dataset"],
+  "repository": {
+    "type" : "git",
+    "url" : "https://github.com/jakobwesthoff/tosec-tool.git"
+  },
   "engines": {
     "node": ">= 12 <13"
   },
