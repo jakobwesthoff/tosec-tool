@@ -1,5 +1,5 @@
 build/
-
+.DS_Store
 
 ####
 # https://github.com/github/gitignore/blob/master/Global/JetBrains.gitignore
