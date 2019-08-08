@@ -2,6 +2,7 @@ import * as fs from "fs";
 import { filterSeries } from "p-iteration";
 import { basename } from "path";
 import * as readdirp from "readdirp";
+import { Batcher } from "./Batcher";
 import { DataStorage, DatFile, TosecGame, TosecRom } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
 import { exists } from "./FileAccess";
@@ -88,14 +89,16 @@ export class TosecCatalog implements ICatalog {
   private async indexDatset(entries: EntryInfo[]): Promise<void> {
     const numberOfDats = entries.length;
     await this.taskList.withTask(
-      new SimpleTask(`Parsing ${numberOfDats} new datsets...`),
+      new SimpleTask(`Parsing ${numberOfDats} datsets...`),
       async (update: TaskUpdate) => {
-        let iteration = 0;
-        for (const { fullPath: filepath } of entries) {
-          await this.indexDatFile(filepath);
-          update(`Parsing new datsets (${++iteration} / ${numberOfDats})...`);
-        }
-        update(`Parsed ${iteration} new datsets.`);
+        const batcher = new Batcher<EntryInfo, void>(
+          4,
+          ({ fullPath: filepath }: EntryInfo) => this.indexDatFile(filepath),
+          (total: number, finished: number, _: number) =>
+            update(`Parsing datsets (${finished} / ${total})...`)
+        );
+        await batcher.run(entries);
+        update(`Parsed ${numberOfDats} datsets.`);
       }
     );
   }

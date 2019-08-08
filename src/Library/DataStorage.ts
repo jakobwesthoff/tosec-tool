@@ -1,10 +1,10 @@
-import {Database, Statement} from "better-sqlite3";
+import { Database, Statement } from "better-sqlite3";
 import * as fse from "fs-extra";
-import {basename} from "path";
-import {exists} from "./FileAccess";
-import {HashedFile} from "./HashGenerator";
-import {SimpleTask} from "./TaskList/SimpleTask";
-import {TaskList, TaskUpdate} from "./TaskList/TaskList";
+import { basename } from "path";
+import { exists } from "./FileAccess";
+import { HashedFile } from "./HashGenerator";
+import { SimpleTask } from "./TaskList/SimpleTask";
+import { TaskList, TaskUpdate } from "./TaskList/TaskList";
 
 export interface RomFile {
   filepath: string;
@@ -64,12 +64,7 @@ export interface MatchResult {
 }
 
 export class DataStorage {
-  private readonly TABLES_TO_PERSIST: string[] = [
-    "roms",
-    "tosec_dats",
-    "tosec_games",
-    "tosec_roms"
-  ];
+  private readonly TABLES_TO_PERSIST: string[] = ["roms"];
 
   private romInsertStatement: Statement | undefined;
   private getRomByFilepathStatement: Statement | undefined;
@@ -86,8 +81,7 @@ export class DataStorage {
   private getTosecForRomStatement: Statement | undefined;
   private updateRomCorruptedStatement: Statement | undefined;
 
-  constructor(private database: Database, private taskList: TaskList) {
-  }
+  constructor(private database: Database, private taskList: TaskList) {}
 
   // tslint:disable-next-line:max-func-body-length
   public initialize(): void {
@@ -95,14 +89,14 @@ export class DataStorage {
     this.createIndices();
 
     this.romInsertStatement = this.database.prepare(
-        `
+      `
                 INSERT INTO roms (filepath, sha1, md5, crc32, extension, mimetype)
                 VALUES (@filepath, @sha1, @md5, @crc32, @extension, @mimetype)
       `
     );
 
     this.getRomByFilepathStatement = this.database.prepare(
-        `
+      `
                 SELECT *
                 FROM roms
                 WHERE filepath = @filepath
@@ -110,7 +104,7 @@ export class DataStorage {
     );
 
     this.datInsertStatement = this.database.prepare(
-        `
+      `
                 INSERT INTO tosec_dats (filepath, name, description, category, version, author, email, homepage,
                                         url)
                 VALUES (@filepath, @name, @description, @category, @version, @author, @email, @homepage, @url)
@@ -118,21 +112,21 @@ export class DataStorage {
     );
 
     this.tosecGameInsertStatement = this.database.prepare(
-        `
+      `
                 INSERT INTO tosec_games (datid, name, description)
                 VALUES (@datid, @name, @description)
       `
     );
 
     this.tosecRomInsertStatement = this.database.prepare(
-        `
+      `
                 INSERT INTO tosec_roms (gameid, name, size, crc32, md5, sha1)
                 VALUES (@gameid, @name, @size, @crc32, @md5, @sha1)
       `
     );
 
     this.updateRomHashesStatement = this.database.prepare(
-        `
+      `
                 UPDATE roms
                 SET sha1=@sha1,
                     md5=@md5,
@@ -142,7 +136,7 @@ export class DataStorage {
     );
 
     this.updateRomCorruptedStatement = this.database.prepare(
-        `
+      `
                 UPDATE roms
                 SET corrupted=@reason
                 WHERE filepath = @filepath
@@ -150,7 +144,7 @@ export class DataStorage {
     );
 
     this.datFileKnownStatement = this.database.prepare(
-        `
+      `
                 SELECT count(*) as count
                 FROM tosec_dats
                 WHERE filepath = @filepath
@@ -158,7 +152,7 @@ export class DataStorage {
     );
 
     this.romFileKnownStatement = this.database.prepare(
-        `
+      `
                 SELECT count(*) as count
                 FROM roms
                 WHERE filepath = @filepath
@@ -169,21 +163,21 @@ export class DataStorage {
     );
 
     this.listOfDatFilepathsStatement = this.database.prepare(
-        `
+      `
                 SELECT filepath
                 from tosec_dats
       `
     );
 
     this.listOfRomFilepathsStatement = this.database.prepare(
-        `
+      `
                 SELECT filepath
                 from roms
       `
     );
 
     this.removeDatFileStatement = this.database.prepare(
-        `
+      `
                 DELETE
                 FROM tosec_dats
                 WHERE filepath = @filepath
@@ -191,7 +185,7 @@ export class DataStorage {
     );
 
     this.removeRomFileStatement = this.database.prepare(
-        `
+      `
                 DELETE
                 FROM roms
                 WHERE filepath = @filepath
@@ -199,7 +193,7 @@ export class DataStorage {
     );
 
     this.getTosecForRomStatement = this.database.prepare(
-        `
+      `
                 SELECT r.filepath     as romFilepath,
                        r.extension    as romExtension,
                        r.mimetype     as romMimetype,
@@ -305,7 +299,7 @@ export class DataStorage {
       const attachStatement = this.database.prepare(
         `ATTACH @filename as storage`
       );
-      attachStatement.run({filename});
+      attachStatement.run({ filename });
     } catch (error) {
       throw new Error(`Database file could not be opened: ${error.message}`);
     }
@@ -341,7 +335,7 @@ export class DataStorage {
     const attachStatement = this.database.prepare(
       `ATTACH @filename as storage`
     );
-    attachStatement.run({filename});
+    attachStatement.run({ filename });
 
     this.createTables("storage");
     const dbfile = basename(filename);
@@ -373,7 +367,7 @@ export class DataStorage {
     let cleanedTarget = target.split(".").pop();
 
     if (chunkSize === undefined) {
-      chunkSize = this.database.pragma("page_size", {simple: true}) * 2;
+      chunkSize = this.database.pragma("page_size", { simple: true }) * 2;
     }
 
     await this.taskList.withTask(
@@ -387,7 +381,7 @@ export class DataStorage {
       SELECT COUNT(*) as count from ${source};
       `
         );
-        const {count} = stmt.get();
+        const { count } = stmt.get();
         let transfered = 0;
 
         stmt = this.database.prepare(`INSERT INTO ${target}
@@ -407,7 +401,7 @@ export class DataStorage {
             ) => {
               setImmediate(() => {
                 try {
-                  stmt.run({offset: transfered});
+                  stmt.run({ offset: transfered });
                   transfered += chunkSize;
                   resolve();
                 } catch (error) {
@@ -432,13 +426,13 @@ export class DataStorage {
         SELECT COUNT(*) as 'count'
         FROM roms
     `);
-    const [{count}] = stmt.all();
+    const [{ count }] = stmt.all();
     return count;
   }
 
   public getNumberOfRomsWithoutHashes(): number {
     const stmt = this.database.prepare(
-        `
+      `
                 SELECT COUNT(*) as 'count'
                 FROM roms
                 WHERE sha1 IS NULL
@@ -446,13 +440,13 @@ export class DataStorage {
                    OR crc32 IS NULL
       `
     );
-    const [{count}] = stmt.all();
+    const [{ count }] = stmt.all();
     return count;
   }
 
   public getUncorruptedRomsWithoutHashes(limit: number = 512): RomFile[] {
     const stmt = this.database.prepare(
-        `
+      `
                 SELECT *
                 FROM roms
                 WHERE (
@@ -465,7 +459,7 @@ export class DataStorage {
       `
     );
 
-    return stmt.all({limit});
+    return stmt.all({ limit });
   }
 
   public storeHashesForRom(filepath: string, hashes: HashedFile): void {
@@ -491,12 +485,12 @@ export class DataStorage {
   }
 
   public isDatFileAlreadyKnown(filepath: string): boolean {
-    const {count} = this.datFileKnownStatement.get({filepath});
+    const { count } = this.datFileKnownStatement.get({ filepath });
     return count === 1;
   }
 
   public isRomAlreadyKnown(filepath: string): boolean {
-    const {count} = this.romFileKnownStatement.get({filepath});
+    const { count } = this.romFileKnownStatement.get({ filepath });
     return count === 1;
   }
 
@@ -527,61 +521,61 @@ export class DataStorage {
   }
 
   public async getRomByFilepath(filepath: string): Promise<RomFile> {
-    return await this.getRomByFilepathStatement.get({filepath});
+    return await this.getRomByFilepathStatement.get({ filepath });
   }
 
   public async removeDatFileRecursive(filepath: string): Promise<void> {
     // ON DELETE CASCADE should take core of the rest.
-    this.removeDatFileStatement.run({filepath});
+    this.removeDatFileStatement.run({ filepath });
   }
 
   public async removeRomFile(filepath: string): Promise<void> {
-    this.removeRomFileStatement.run({filepath});
+    this.removeRomFileStatement.run({ filepath });
   }
 
   public getStorageStats(): StorageStats {
     let stmt: Statement;
 
     stmt = this.database.prepare(
-        `
+      `
                 SELECT COUNT(*) as numberOfRoms
                 FROM roms;
       `
     );
-    const {numberOfRoms} = stmt.get();
+    const { numberOfRoms } = stmt.get();
 
     stmt = this.database.prepare(
-        `
+      `
                 SELECT COUNT(*) as numberOfRomsZipped
                 FROM roms
                 WHERE mimetype = 'application/zip'
       `
     );
-    const {numberOfRomsZipped} = stmt.get();
+    const { numberOfRomsZipped } = stmt.get();
 
     stmt = this.database.prepare(
-        `
+      `
                 SELECT COUNT(*) as numberOfTosecDats
                 FROM tosec_dats;
       `
     );
-    const {numberOfTosecDats} = stmt.get();
+    const { numberOfTosecDats } = stmt.get();
 
     stmt = this.database.prepare(
-        `
+      `
                 SELECT COUNT(*) as numberOfTosecGames
                 FROM tosec_games;
       `
     );
-    const {numberOfTosecGames} = stmt.get();
+    const { numberOfTosecGames } = stmt.get();
 
     stmt = this.database.prepare(
-        `
+      `
                 SELECT COUNT(*) as numberOfTosecRoms
                 FROM tosec_roms;
       `
     );
-    const {numberOfTosecRoms} = stmt.get();
+    const { numberOfTosecRoms } = stmt.get();
 
     return {
       numberOfRoms,
@@ -595,7 +589,7 @@ export class DataStorage {
   public async getTosecMatchForRom(
     filepath: string
   ): Promise<MatchResult | undefined> {
-    return this.getTosecForRomStatement.get({filepath});
+    return this.getTosecForRomStatement.get({ filepath });
   }
 
   private hexToBuffer(hex: string): Buffer {
