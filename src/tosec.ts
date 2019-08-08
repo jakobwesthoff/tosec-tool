@@ -13,6 +13,10 @@ const commands: Command[] = [
   {
     command: "sort",
     description: `Sort, structure and rename your romfiles based on a TOSEC datset.`
+  },
+  {
+    command: "cleandb",
+    description: `Remove referenced, but not longer available Rom files from database.`
   }
 ];
 

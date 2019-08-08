@@ -13,6 +13,7 @@
   "bin": {
     "tosec": "./build/src/tosec.js",
     "tosec-sort": "./build/src/tosec-sort.js"
+    "tosec-cleandb": "./build/src/tosec-cleandb.js"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^5.4.0",

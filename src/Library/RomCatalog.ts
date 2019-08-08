@@ -33,7 +33,7 @@ export class RomCatalog implements ICatalog {
     await this.updateRomHashes();
   }
 
-  private async cleanupRemovedFiles(): Promise<void> {
+  public async cleanupRemovedFiles(): Promise<void> {
     await this.taskList.withTask(
       new SimpleTask(`Validating rom file database...`),
       async (update: TaskUpdate) => {
