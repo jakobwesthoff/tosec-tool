@@ -49,7 +49,7 @@
     "lint": "tslint -t stylish --project \"tsconfig.json\"",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
-    "prepublish": "npm run build"
+    "prepare": "npm run build"
   },
   "author": "Jakob Westhoff <jakob@westhoffswelt.de> (http://westhoffswelt.de)",
   "license": "MIT",
