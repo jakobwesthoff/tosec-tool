@@ -67,6 +67,10 @@ export class Sorter {
 
     await this.ensureDirectoryExists(targetDirectory);
     await this.copy(match.romFilepath, targetFilepath);
+    await this.addHashInformationForPersistetFile(
+      match.romFilepath,
+      targetFilepath
+    );
 
     return true;
   }
@@ -81,8 +85,17 @@ export class Sorter {
 
     await this.ensureDirectoryExists(targetDirectory);
     await this.copy(filepath, targetFilepath);
+    await this.addHashInformationForPersistetFile(filepath, targetFilepath);
 
     return true;
+  }
+
+  private async addHashInformationForPersistetFile(
+    sourceFilepath: string,
+    targetFilepath: string
+  ): Promise<void> {
+    const rom = await this.storage.getRomByFilepath(sourceFilepath);
+    await this.storage.storeRomFile({ ...rom, filepath: targetFilepath });
   }
 
   private getDirectoryForMatch(match: MatchResult): string {
