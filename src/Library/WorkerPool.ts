@@ -8,6 +8,14 @@ export type WorkComplete<T> = (
   data: T
 ) => Promise<void>;
 
+export type WorkError<T> = (
+  id: number,
+  input: T,
+  error: Error
+) => Promise<void>;
+
+export type WorkStart<T> = (id: number, data: T) => void;
+
 export type WorkProgress = (id: number, protocol: string, data: any) => void;
 
 export interface WorkerMessage {
@@ -23,11 +31,14 @@ export class WorkerPool<InputType, OutputType> {
   private active: boolean;
   private workers: Worker[];
   private freeWorkers: Worker[];
+  private workerData: InputType[];
 
   constructor(
     private poolSize: number,
     private workerFilename: string,
     private complete: WorkComplete<OutputType>,
+    private error: WorkError<InputType> = () => Promise.resolve(),
+    private start: WorkStart<InputType> = () => Promise.resolve(),
     private progress: WorkProgress = () => {}
   ) {}
 
@@ -71,6 +82,7 @@ export class WorkerPool<InputType, OutputType> {
     this.inputSetSize = input.length;
     this.finishedCount = 0;
     this.active = true;
+    this.workerData = [];
     // tslint:disable-next-line:promise-must-complete
     return new Promise<void>((resolve: () => void) => {
       this.runFinished = resolve;
@@ -83,6 +95,11 @@ export class WorkerPool<InputType, OutputType> {
     message: WorkerMessage
   ): Promise<void> {
     switch (true) {
+      case message.protocol === "error":
+        await this.error(id, this.workerData[id], message.data);
+        this.freeWorkers.push(this.workers[id]);
+        this.processNextItem();
+        break;
       case message.protocol === "result":
         await this.complete(
           this.inputSetSize,
@@ -119,9 +136,15 @@ export class WorkerPool<InputType, OutputType> {
     }
 
     const worker = this.freeWorkers.pop();
+    const workerData = this.queue.shift();
+    const workerId = this.workers.findIndex(
+      (candidate: Worker) => candidate === worker
+    );
+    this.workerData[workerId] = workerData;
+    this.start(workerId, workerData);
     worker.postMessage({
-      protocol: "index-dat-file",
-      data: this.queue.shift()
+      protocol: "execute",
+      data: workerData
     });
 
     this.processNextItem();

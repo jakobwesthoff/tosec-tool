@@ -4,7 +4,6 @@ import * as Database from "better-sqlite3";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
 import { exists, isReadable } from "./Library/FileAccess";
-import { HashGenerator } from "./Library/HashGenerator";
 import { MimeTypeResolver } from "./Library/MimeTypeResolver";
 import { RomCatalog } from "./Library/RomCatalog";
 import { Sorter } from "./Library/Sorter";
@@ -87,14 +86,11 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
 
     const mimeTypeResolver = new MimeTypeResolver();
 
-    const hashGenerator = new HashGenerator();
-
     const romsCatalog = new RomCatalog(
       cli.input,
       taskList,
       storage,
-      mimeTypeResolver,
-      hashGenerator
+      mimeTypeResolver
     );
 
     const tosecCatalog = new TosecCatalog(cli.flags.tosec, taskList, storage);
@@ -143,7 +139,9 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
     taskList.stop();
   } catch (error) {
     taskList.stop();
-    process.stderr.write(`${logSymbols.error} ${error.message}: ${error.stack}\n`);
+    process.stderr.write(
+      `${logSymbols.error} ${error.message}: ${error.stack}\n`
+    );
     process.exit(130);
   }
 })();

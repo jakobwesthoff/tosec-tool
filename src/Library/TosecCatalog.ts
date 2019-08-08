@@ -1,21 +1,22 @@
-import { filterSeries } from "p-iteration";
-import { basename } from "path";
+import {filterSeries} from "p-iteration";
+import {basename} from 'path';
 import * as readdirp from "readdirp";
-import { DataStorage, DatFile, TosecGame, TosecRom } from "./DataStorage";
-import { EntryInfo } from "./EntryInfo";
-import { exists } from "./FileAccess";
-import { ICatalog } from "./ICatalog";
-import { SimpleTask, SimpleTaskState } from "./TaskList/SimpleTask";
-import { TaskList, TaskUpdate } from "./TaskList/TaskList";
+import {DataStorage, DatFile, TosecGame, TosecRom} from "./DataStorage";
+import {EntryInfo} from "./EntryInfo";
+import {exists} from "./FileAccess";
+import {ICatalog} from "./ICatalog";
+import {SimpleTask, SimpleTaskState} from "./TaskList/SimpleTask";
+import {TaskList, TaskUpdate} from "./TaskList/TaskList";
 import {ParsedData, Result} from "./Worker/parseDatFile";
-import { WorkerPool } from "./WorkerPool";
+import {WorkerPool} from "./WorkerPool";
 
 export class TosecCatalog implements ICatalog {
   constructor(
     private datasetDirectory: string,
     private taskList: TaskList,
     private storage: DataStorage
-  ) {}
+  ) {
+  }
 
   public async createIndex(): Promise<void> {
     await this.cleanupRemovedFiles();
@@ -109,11 +110,17 @@ export class TosecCatalog implements ICatalog {
           ) => {
             tasks[id].update(
               SimpleTaskState.RUNNING,
-              `Indexing ${basename(result.filepath)}...`
+              `Analysing roms from ${basename(result.filepath)} (${result.data.roms.length}) [indexing]...`
             );
             await this.storeDatFile(result.data);
+            tasks[id].update(
+              SimpleTaskState.RUNNING,
+              `Ready to parse next dat...`
+            );
             update(`Parsing datsets (${finished} / ${total})...`);
           },
+          undefined,
+          undefined,
           (id: number, _: string, data: any) => {
             tasks[id].update(SimpleTaskState.RUNNING, data);
           }

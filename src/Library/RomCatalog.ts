@@ -1,26 +1,23 @@
-import { createReadStream } from "fs";
 import { filterSeries } from "p-iteration";
 import { basename } from "path";
 import * as readdirp from "readdirp";
-import { Readable } from "stream";
-import * as unzipper from "unzipper";
-import { DataStorage } from "./DataStorage";
+import { DataStorage, RomFile } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
 import { exists } from "./FileAccess";
-import { HashGenerator } from "./HashGenerator";
 import { ICatalog } from "./ICatalog";
 import { MimeTypeResolver } from "./MimeTypeResolver";
-import { SimpleTask } from "./TaskList/SimpleTask";
+import { SimpleTask, SimpleTaskState } from "./TaskList/SimpleTask";
 import { StaticWarningTask } from "./TaskList/StaticWarningTask";
 import { TaskList, TaskUpdate } from "./TaskList/TaskList";
+import { Result } from "./Worker/hashFile";
+import { WorkerPool } from "./WorkerPool";
 
 export class RomCatalog implements ICatalog {
   constructor(
     private filepaths: string[],
     private taskList: TaskList,
     private storage: DataStorage,
-    private mimeTypeResolver: MimeTypeResolver,
-    private hashGenerator: HashGenerator
+    private mimeTypeResolver: MimeTypeResolver
   ) {}
 
   public async createIndex(): Promise<void> {
@@ -137,7 +134,48 @@ export class RomCatalog implements ICatalog {
          * See: https://github.com/JoshuaWise/better-sqlite3/issues/203
          */
 
-        let iteration = 0;
+        let hashedFileCount = 0;
+        const poolSize = 4;
+        const tasks: SimpleTask[] = [];
+        for (let i = 0; i < poolSize; i++) {
+          tasks[i] = new SimpleTask(`Waiting to hash file...`);
+          this.taskList.addTask(tasks[i]);
+        }
+
+        const pool = new WorkerPool<any, Result>(
+          poolSize,
+          `${__dirname}/Worker/hashFile.js`,
+          async (
+            _: number,
+            __: number,
+            ___: number,
+            id: number,
+            result: Result
+          ) => {
+            this.storage.storeHashesForRom(result.filepath, result.hashes);
+            update(`Hashing roms (${++hashedFileCount} / ${count})...`);
+            tasks[id].update(
+              SimpleTaskState.RUNNING,
+              `Waiting to hash file...`
+            );
+          },
+          async (_: number, { filepath }: any, error: Error) => {
+            this.storage.storeCorruptionForRom(filepath, error.message);
+            this.taskList.addTask(
+              new StaticWarningTask(
+                `Could not hash file ${filepath}: ${error.message}`
+              ),
+              -1
+            );
+          },
+          (id: number, { filepath }: any) => {
+            tasks[id].update(
+              SimpleTaskState.RUNNING,
+              `Hashing file ${basename(filepath)}...`
+            );
+          }
+        );
+        await pool.initialize();
         // tslint:disable-next-line:no-constant-condition
         while (true) {
           const rows = this.storage.getUncorruptedRomsWithoutHashes();
@@ -145,40 +183,20 @@ export class RomCatalog implements ICatalog {
             break;
           }
 
-          for (const { filepath, mimetype } of rows) {
-            const fileStream = this.createReadableForFile(filepath, mimetype);
-            let hashes;
-            try {
-              hashes = await this.hashGenerator.hash(fileStream);
-            } catch (error) {
-              this.storage.storeCorruptionForRom(filepath, error.message);
-              this.taskList.addTask(
-                new StaticWarningTask(
-                  `Could not hash file ${filepath}: ${error.message}`
-                ),
-                -1
-              );
-            }
-
-            if (hashes !== undefined) {
-              this.storage.storeHashesForRom(filepath, hashes);
-            }
-            update(
-              `Hashing roms (${++iteration} / ${count}): ${basename(filepath)}`
-            );
-          }
+          await pool.run(
+            rows.map(({ filepath, mimetype }: RomFile) => ({
+              filepath,
+              mimetype
+            }))
+          );
         }
-        update(`Hashed ${iteration} roms.`);
+
+        for (let i = 0; i < poolSize; i++) {
+          tasks[i].update(SimpleTaskState.FINISHED, null);
+        }
+
+        update(`Hashed ${hashedFileCount} roms.`);
       }
     );
-  }
-
-  private createReadableForFile(filepath: string, mimetype: string): Readable {
-    const readStream = createReadStream(filepath, { autoClose: true });
-    if (mimetype === "application/zip") {
-      return readStream.pipe(unzipper.ParseOne(undefined, undefined));
-    } else {
-      return readStream;
-    }
   }
 }

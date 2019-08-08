@@ -23,7 +23,7 @@ if (isMainThread) {
 const parser = new TosecDatParser();
 
 parentPort.on("message", ({ protocol, data: filepath }: WorkerMessage) => {
-  if (protocol !== "index-dat-file") {
+  if (protocol !== "execute") {
     throw new Error(`Unknown Protocol: ${protocol}`);
   }
 

@@ -4,7 +4,6 @@ import * as Database from "better-sqlite3";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
 import { exists, isReadable } from "./Library/FileAccess";
-import { HashGenerator } from "./Library/HashGenerator";
 import { MimeTypeResolver } from "./Library/MimeTypeResolver";
 import { RomCatalog } from "./Library/RomCatalog";
 import { SimpleTask } from "./Library/TaskList/SimpleTask";
@@ -46,14 +45,7 @@ if (cli.input.length < 1) {
     await storage.initialize();
 
     const mimeTypeResolver = new MimeTypeResolver();
-    const hashGenerator = new HashGenerator();
-    const romCatalog = new RomCatalog(
-      [],
-      taskList,
-      storage,
-      mimeTypeResolver,
-      hashGenerator
-    );
+    const romCatalog = new RomCatalog([], taskList, storage, mimeTypeResolver);
 
     taskList.start();
 
