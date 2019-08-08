@@ -1,22 +1,20 @@
-import * as fs from "fs";
 import { filterSeries } from "p-iteration";
 import { basename } from "path";
 import * as readdirp from "readdirp";
-import { Batcher } from "./Batcher";
 import { DataStorage, DatFile, TosecGame, TosecRom } from "./DataStorage";
 import { EntryInfo } from "./EntryInfo";
 import { exists } from "./FileAccess";
 import { ICatalog } from "./ICatalog";
-import { SimpleTask } from "./TaskList/SimpleTask";
+import { SimpleTask, SimpleTaskState } from "./TaskList/SimpleTask";
 import { TaskList, TaskUpdate } from "./TaskList/TaskList";
-import { TosecDatParser } from "./TosecDatParser";
+import {ParsedData, Result} from "./Worker/parseDatFile";
+import { WorkerPool } from "./WorkerPool";
 
 export class TosecCatalog implements ICatalog {
   constructor(
     private datasetDirectory: string,
     private taskList: TaskList,
-    private storage: DataStorage,
-    private parser: TosecDatParser
+    private storage: DataStorage
   ) {}
 
   public async createIndex(): Promise<void> {
@@ -91,63 +89,101 @@ export class TosecCatalog implements ICatalog {
     await this.taskList.withTask(
       new SimpleTask(`Parsing ${numberOfDats} datsets...`),
       async (update: TaskUpdate) => {
-        const batcher = new Batcher<EntryInfo, void>(
-          4,
-          ({ fullPath: filepath }: EntryInfo) => this.indexDatFile(filepath),
-          (total: number, finished: number, _: number) =>
-            update(`Parsing datsets (${finished} / ${total})...`)
+        const poolSize = 4;
+        const tasks: SimpleTask[] = [];
+        for (let i = 0; i < poolSize; i++) {
+          const task = new SimpleTask(`Waiting to parse dat file...`);
+          this.taskList.addTask(task);
+          tasks.push(task);
+        }
+
+        const pool = new WorkerPool<string, Result>(
+          poolSize,
+          `${__dirname}/Worker/parseDatFile.js`,
+          async (
+            total: number,
+            finished: number,
+            _: number,
+            id: number,
+            result: Result
+          ) => {
+            tasks[id].update(
+              SimpleTaskState.RUNNING,
+              `Indexing ${basename(result.filepath)}...`
+            );
+            await this.storeDatFile(result.data);
+            update(`Parsing datsets (${finished} / ${total})...`);
+          },
+          (id: number, _: string, data: any) => {
+            tasks[id].update(SimpleTaskState.RUNNING, data);
+          }
         );
-        await batcher.run(entries);
+        await pool.initialize();
+        await pool.run(entries.map((entry: EntryInfo) => entry.fullPath));
+        for (let i = 0; i < poolSize; i++) {
+          tasks[i].update(SimpleTaskState.FINISHED, null);
+        }
         update(`Parsed ${numberOfDats} datsets.`);
       }
     );
   }
 
-  private async indexDatFile(filepath: string): Promise<void> {
-    const datfile = basename(filepath);
-    await this.taskList.withTask(
-      new SimpleTask(`Analysing roms from ${datfile}...`),
-      async (update: TaskUpdate) => {
-        // tslint:disable-next-line:non-literal-fs-path
-        const fileStream = fs.createReadStream(filepath);
-        let datid: number;
-        let gameid: number;
-        let gameCount = 0;
+  private async storeDatFile(result: ParsedData): Promise<void> {
+    const datFileIdMap = new Map<number, number>();
+    const gameIdMap = new Map<number, number>();
 
-        await this.parser.parse(fileStream, {
-          datFile: (datFile: DatFile) => {
-            datid = this.storage.storeDatFile({
-              description: null,
-              author: null,
-              email: null,
-              homepage: null,
-              url: null,
-              ...datFile,
-              filepath
-            });
-          },
-          game: (game: TosecGame) => {
-            gameid = this.storage.storeTosecGame({
-              ...game,
-              datid
-            });
-          },
-          rom: (rom: TosecRom) => {
-            if (
-              rom.crc32 !== undefined &&
-              rom.sha1 !== undefined &&
-              rom.md5 !== undefined
-            ) {
-              this.storage.storeTosecRom({
-                ...rom,
-                gameid
-              });
-              update(`Analysing roms from ${datfile} (${++gameCount})...`);
-            }
-          }
-        });
-        update(null);
-      }
+    await result.datFile.reduce(
+      (promise: Promise<void>, datFile: DatFile, index: number) => {
+        return promise.then(
+          () =>
+            new Promise<void>((resolve: () => void) =>
+              setImmediate(() => {
+                datFileIdMap.set(index, this.storage.storeDatFile(datFile));
+                resolve();
+              })
+            )
+        );
+      },
+      Promise.resolve()
+    );
+
+    await result.games.reduce(
+      (promise: Promise<void>, game: TosecGame, index: number) => {
+        return promise.then(
+          () =>
+            new Promise<void>((resolve: () => void) =>
+              setImmediate(() => {
+                gameIdMap.set(
+                  index,
+                  this.storage.storeTosecGame({
+                    ...game,
+                    datid: datFileIdMap.get(game.datid)
+                  })
+                );
+                resolve();
+              })
+            )
+        );
+      },
+      Promise.resolve()
+    );
+
+    await result.roms.reduce(
+      (promise: Promise<void>, rom: TosecRom, _: number) => {
+        return promise.then(
+          () =>
+            new Promise<void>((resolve: () => void) =>
+              setImmediate(() => {
+                this.storage.storeTosecRom({
+                  ...rom,
+                  gameid: gameIdMap.get(rom.gameid)
+                });
+                resolve();
+              })
+            )
+        );
+      },
+      Promise.resolve()
     );
   }
 }

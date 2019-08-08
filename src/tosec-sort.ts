@@ -12,7 +12,6 @@ import { SimpleTask } from "./Library/TaskList/SimpleTask";
 import { StaticInfoTask } from "./Library/TaskList/StaticInfoTask";
 import { TaskList, TaskUpdate } from "./Library/TaskList/TaskList";
 import { TosecCatalog } from "./Library/TosecCatalog";
-import { TosecDatParser } from "./Library/TosecDatParser";
 import logSymbols = require("log-symbols");
 
 const cli = meow(
@@ -98,13 +97,7 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
       hashGenerator
     );
 
-    const datParser = new TosecDatParser();
-    const tosecCatalog = new TosecCatalog(
-      cli.flags.tosec,
-      taskList,
-      storage,
-      datParser
-    );
+    const tosecCatalog = new TosecCatalog(cli.flags.tosec, taskList, storage);
 
     taskList.start();
 
@@ -150,7 +143,7 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
     taskList.stop();
   } catch (error) {
     taskList.stop();
-    process.stderr.write(`${logSymbols.error} ${error.message}\n`);
+    process.stderr.write(`${logSymbols.error} ${error.message}: ${error.stack}\n`);
     process.exit(130);
   }
 })();
