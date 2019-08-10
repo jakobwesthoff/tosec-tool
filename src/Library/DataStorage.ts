@@ -24,9 +24,10 @@ export interface RetroarchRdbFile {
 export interface RetroarchRom {
   rdbid: number;
   name: string;
-  crc32: string;
-  md5: string;
-  sha1: string;
+  crc32: string | null;
+  md5: string | null;
+  sha1: string | null;
+  size: number | null;
 }
 
 export interface DatFile {
@@ -166,8 +167,8 @@ export class DataStorage {
 
     this.retroarchRomInsertStatement = this.database.prepare(
       `
-                INSERT INTO retroarch_roms (rdbid, name, crc32, md5, sha1)
-                VALUES (@rdbid, @name, @crc32, @md5, @sha1)
+                INSERT INTO retroarch_roms (rdbid, name, size, crc32, md5, sha1)
+                VALUES (@rdbid, @name, @size, @crc32, @md5, @sha1)
       `
     );
 
@@ -300,8 +301,20 @@ export class DataStorage {
                        rdb.name     as rdbName,
                        rr.name      as retroarchRomName
                 FROM roms AS r
-                         INNER JOIN retroarch_roms AS rr ON r.sha1 = rr.sha1 AND r.md5 = rr.md5 AND
-                                                            r.crc32 = rr.crc32
+                         INNER JOIN retroarch_roms AS rr ON
+                        (r.sha1 = rr.sha1 AND r.md5 = rr.md5 AND r.crc32 = rr.crc32 AND r.size = rr.size)
+                        OR (r.sha1 = rr.sha1 AND r.md5 = rr.md5 AND r.crc32 = rr.crc32 AND rr.size IS NULL)
+                        OR (r.sha1 = rr.sha1 AND r.md5 = rr.md5 AND rr.crc32 IS NULL AND r.size = rr.size)
+                        OR (r.sha1 = rr.sha1 AND r.md5 = rr.md5 AND rr.crc32 IS NULL AND rr.size IS NULL)
+                        OR (r.sha1 = rr.sha1 AND rr.md5 IS NULL AND r.crc32 = rr.crc32 AND r.size = rr.size)
+                        OR (r.sha1 = rr.sha1 AND rr.md5 IS NULL AND r.crc32 = rr.crc32 AND rr.size IS NULL)
+                        OR (r.sha1 = rr.sha1 AND rr.md5 IS NULL AND rr.crc32 IS NULL AND r.size = rr.size)
+                        OR (r.sha1 = rr.sha1 AND rr.md5 IS NULL AND rr.crc32 IS NULL AND rr.size IS NULL)
+                        OR (rr.sha1 IS NULL AND r.md5 = rr.md5 AND r.crc32 = rr.crc32 AND r.size = rr.size)
+                        OR (rr.sha1 IS NULL AND r.md5 = rr.md5 AND r.crc32 = rr.crc32 AND rr.size IS NULL)
+                        OR (rr.sha1 IS NULL AND r.md5 = rr.md5 AND rr.crc32 IS NULL AND r.size = rr.size)
+                        OR (rr.sha1 IS NULL AND r.md5 = rr.md5 AND rr.crc32 IS NULL AND rr.size IS NULL)
+                        OR (rr.sha1 IS NULL AND rr.md5 IS NULL AND r.crc32 = rr.crc32 AND r.size = rr.size)
                          INNER JOIN retroarch_rdbs AS rdb ON rr.rdbid = rdb.id
                 WHERE r.filepath = @filepath
                   AND r.corrupted IS NULL
@@ -312,10 +325,10 @@ export class DataStorage {
   private createIndices(): void {
     this.database.exec(`
         CREATE UNIQUE INDEX idx_roms_filepath ON roms (filepath);
-        CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32, corrupted);
+        CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32, size, corrupted);
         CREATE INDEX idx_roms_mimetype ON roms (mimetype);
 
-        CREATE INDEX idx_retroarch_rom_hashes ON retroarch_roms (sha1, md5, crc32);
+        CREATE INDEX idx_retroarch_rom_hashes ON retroarch_roms (sha1, md5, crc32, size);
 
         CREATE UNIQUE INDEX idx_tosec_dats_filepath ON tosec_dats (filepath);
 
@@ -355,6 +368,7 @@ export class DataStorage {
         sha1  BLOB DEFAULT NULL,
         md5   BLOB DEFAULT NULL,
         crc32 BLOB DEFAULT NULL,
+        size  INTEGER DEFAULT NULL,
         name  TEXT NOT NULL,
         CONSTRAINT fk_rdbid
           FOREIGN KEY (rdbid) 
@@ -645,9 +659,9 @@ export class DataStorage {
   public storeRetroarchRom(rom: RetroarchRom): void {
     this.retroarchRomInsertStatement.run({
       ...rom,
-      crc32: this.hexToBuffer(rom.crc32),
-      md5: this.hexToBuffer(rom.md5),
-      sha1: this.hexToBuffer(rom.sha1)
+      crc32: rom.crc32 === null ? null : this.hexToBuffer(rom.crc32),
+      md5: rom.md5 === null ? null : this.hexToBuffer(rom.md5),
+      sha1: rom.sha1 === null ? null : this.hexToBuffer(rom.sha1)
     });
   }
 

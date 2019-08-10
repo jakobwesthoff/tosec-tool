@@ -48,7 +48,7 @@ async function indexRdbFile(
 
   entries
     .filter((candidate: any, _: number) => {
-      if (candidate.name && candidate.crc && candidate.sha1 && candidate.md5) {
+      if (candidate.name) {
         return true;
       } else {
         // w.write(`${filepath}, ${index}: ${JSON.stringify(candidate)}\n`);
@@ -59,9 +59,10 @@ async function indexRdbFile(
       results.roms.push({
         rdbid: 0,
         name: entry.name,
-        crc32: entry.crc,
-        sha1: entry.sha1,
-        md5: entry.md5
+        crc32: entry.crc !== undefined ? entry.crc : null,
+        sha1: entry.sha1 !== undefined ? entry.sha1 : null,
+        md5: entry.md5 !== undefined ? entry.md5 : null,
+        size: entry.size !== undefined ? entry.size : null
       });
     });
 
