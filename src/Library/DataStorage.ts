@@ -13,6 +13,7 @@ export interface RomFile {
   crc32: string;
   md5: string;
   sha1: string;
+  size: number;
 }
 
 export interface RetroarchRdbFile {
@@ -93,6 +94,7 @@ export class DataStorage {
   private romInsertStatement: Statement | undefined;
   private getRomByFilepathStatement: Statement | undefined;
   private updateRomHashesStatement: Statement | undefined;
+  private updateRomSizeStatement: Statement | undefined;
   private datInsertStatement: Statement | undefined;
   private rdbInsertStatement: Statement | undefined;
   private tosecRomInsertStatement: Statement | undefined;
@@ -120,8 +122,8 @@ export class DataStorage {
 
     this.romInsertStatement = this.database.prepare(
       `
-                INSERT INTO roms (filepath, sha1, md5, crc32, extension, mimetype)
-                VALUES (@filepath, @sha1, @md5, @crc32, @extension, @mimetype)
+                INSERT INTO roms (filepath, sha1, md5, crc32, size, extension, mimetype)
+                VALUES (@filepath, @sha1, @md5, @crc32, @size, @extension, @mimetype)
       `
     );
 
@@ -175,6 +177,14 @@ export class DataStorage {
                 SET sha1=@sha1,
                     md5=@md5,
                     crc32=@crc32
+                WHERE filepath = @filepath
+      `
+    );
+
+    this.updateRomSizeStatement = this.database.prepare(
+      `
+                UPDATE roms
+                SET size=@size
                 WHERE filepath = @filepath
       `
     );
@@ -328,6 +338,7 @@ export class DataStorage {
           crc32     BLOB DEFAULT NULL,
           extension TEXT DEFAULT NULL,
           mimetype  TEXT DEFAULT NULL,
+          size      INTEGER DEFAULT NULL,
           corrupted TEXT DEFAULT NULL
       );
 
@@ -574,6 +585,13 @@ export class DataStorage {
       crc32: this.hexToBuffer(hashes.crc32),
       md5: this.hexToBuffer(hashes.md5),
       sha1: this.hexToBuffer(hashes.sha1),
+      filepath
+    });
+  }
+
+  public storeSizeForRom(filepath: string, size: number): void {
+    this.updateRomSizeStatement.run({
+      size,
       filepath
     });
   }

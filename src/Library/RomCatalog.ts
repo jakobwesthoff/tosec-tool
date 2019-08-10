@@ -108,6 +108,7 @@ export class RomCatalog implements ICatalog {
             sha1: null,
             md5: null,
             crc32: null,
+            size: null,
             extension: fileType.ext,
             mimetype: fileType.mime
           });
@@ -153,6 +154,7 @@ export class RomCatalog implements ICatalog {
             result: Result
           ) => {
             this.storage.storeHashesForRom(result.filepath, result.hashes);
+            this.storage.storeSizeForRom(result.filepath, result.size);
             update(`Hashing roms (${++hashedFileCount} / ${count})...`);
             tasks[id].update(
               SimpleTaskState.RUNNING,

@@ -3,11 +3,13 @@ import { Readable } from "stream";
 import * as unzipper from "unzipper";
 import { isMainThread, parentPort } from "worker_threads";
 import { HashedFile, HashGenerator } from "../HashGenerator";
+import { SizeStream } from "../SizeStream";
 import { WorkerMessage } from "../WorkerPool";
 
 export interface Result {
   filepath: string;
   hashes: HashedFile;
+  size: number;
 }
 
 if (isMainThread) {
@@ -38,10 +40,15 @@ function createReadableForFile(filepath: string, mimetype: string): Readable {
 
 async function hashFile(filepath: string, mimetype: string): Promise<void> {
   const fileStream = createReadableForFile(filepath, mimetype);
+  const sizeStream = new SizeStream();
+  fileStream.pipe(sizeStream);
   let hashes;
   try {
-    hashes = await hashGenerator.hash(fileStream);
-    parentPort.postMessage({ protocol: "result", data: { filepath, hashes } });
+    hashes = await hashGenerator.hash(sizeStream);
+    parentPort.postMessage({
+      protocol: "result",
+      data: { filepath, hashes, size: sizeStream.getSize() }
+    });
   } catch (error) {
     parentPort.postMessage({ protocol: "error", data: error });
   }

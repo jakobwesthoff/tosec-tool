@@ -48,7 +48,7 @@ export class Extractor {
           );
         }
         update(
-          `Extracted ${roms.length} (${roms.length -
+          `Extracted ${sortedCount} roms (${roms.length -
             sortedCount} unknown, ${duplicateCount} duplicates) into ${
             this.outputDirectory
           }.`
