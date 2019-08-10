@@ -1,35 +1,35 @@
 import * as fse from "fs-extra";
-import * as path from "path";
-import { DataStorage, TosecMatchResult } from "./DataStorage";
+import { DataStorage, RetroarchMatchResult } from "./DataStorage";
 import { exists } from "./FileAccess";
 import { SimpleTask } from "./TaskList/SimpleTask";
 import { TaskList, TaskUpdate } from "./TaskList/TaskList";
 
-export class Sorter {
+export class Extractor {
   constructor(
     private taskList: TaskList,
     private storage: DataStorage,
     private outputDirectory: string
   ) {}
 
-  public async sort(): Promise<void> {
+  public async extract(): Promise<void> {
     await this.taskList.withTask(
-      new SimpleTask(`Sorting rom files...`),
+      new SimpleTask(`Extracting rom files...`),
       async (update: TaskUpdate) => {
         let sortedCount = 0;
         let duplicateCount = 0;
         const roms = await this.storage.getRomFilepaths();
         for (let i = 0; i < roms.length; i++) {
-          update(`Sorting (${i + 1} / ${roms.length})...`);
+          update(`Extracting (${i + 1} / ${roms.length})...`);
           await new Promise<void>(
             (
               resolve: (value?: PromiseLike<void> | void) => void,
               reject: (reason?: any) => void
             ) =>
               setImmediate(async () => {
-                const match = await this.storage.getTosecMatchForRom(roms[i]);
+                const match = await this.storage.getRetroarchMatchForRom(
+                  roms[i]
+                );
                 if (match === undefined) {
-                  await this.persistUnknown(roms[i]);
                   return resolve();
                 }
 
@@ -48,7 +48,7 @@ export class Sorter {
           );
         }
         update(
-          `Sorted ${roms.length} (${roms.length -
+          `Extracted ${roms.length} (${roms.length -
             sortedCount} unknown, ${duplicateCount} duplicates) into ${
             this.outputDirectory
           }.`
@@ -57,7 +57,7 @@ export class Sorter {
     );
   }
 
-  private async persistMatch(match: TosecMatchResult): Promise<boolean> {
+  private async persistMatch(match: RetroarchMatchResult): Promise<boolean> {
     const targetDirectory = this.getDirectoryForMatch(match);
     const targetFilepath = this.getFilepathForMatch(match);
 
@@ -67,54 +67,17 @@ export class Sorter {
 
     await this.ensureDirectoryExists(targetDirectory);
     await this.copy(match.romFilepath, targetFilepath);
-    await this.addHashInformationForPersistetFile(
-      match.romFilepath,
-      targetFilepath
-    );
 
     return true;
   }
 
-  private async persistUnknown(filepath: string): Promise<boolean> {
-    const targetFilepath = this.getFilepathForUnknown(filepath);
-    const targetDirectory = path.dirname(filepath);
-
-    if (await exists(targetFilepath)) {
-      return false;
-    }
-
-    await this.ensureDirectoryExists(targetDirectory);
-    await this.copy(filepath, targetFilepath);
-    await this.addHashInformationForPersistetFile(filepath, targetFilepath);
-
-    return true;
+  private getDirectoryForMatch(match: RetroarchMatchResult): string {
+    return `${this.outputDirectory}/${match.rdbName}`;
   }
 
-  private async addHashInformationForPersistetFile(
-    sourceFilepath: string,
-    targetFilepath: string
-  ): Promise<void> {
-    const rom = await this.storage.getRomByFilepath(sourceFilepath);
-    await this.storage.storeRomFile({ ...rom, filepath: targetFilepath });
-  }
-
-  private getDirectoryForMatch(match: TosecMatchResult): string {
-    return `${this.outputDirectory}/${match.tosecDatName}`;
-  }
-
-  private getFilepathForUnknown(filepath: string) {
-    return `${this.outputDirectory}/__UNKNOWN__/${filepath}`;
-  }
-
-  private getFilepathForMatch(match: TosecMatchResult): string {
-    const pathInfo = path.parse(match.tosecRomName);
-    const newFilename = `${pathInfo.name}`;
-    let newExtension = "";
-    if (match.romMimetype === "application/zip") {
-      newExtension = `.${match.romExtension}`;
-    } else {
-      newExtension = `${pathInfo.ext}`;
-    }
+  private getFilepathForMatch(match: RetroarchMatchResult): string {
+    const newFilename = `${match.retroarchRomName}`;
+    const newExtension = `.${match.romExtension}`;
     return `${this.getDirectoryForMatch(match)}/${newFilename}${newExtension}`;
   }
 

@@ -15,6 +15,19 @@ export interface RomFile {
   sha1: string;
 }
 
+export interface RetroarchRdbFile {
+  filepath: string;
+  name: string;
+}
+
+export interface RetroarchRom {
+  rdbid: number;
+  name: string;
+  crc32: string;
+  md5: string;
+  sha1: string;
+}
+
 export interface DatFile {
   filepath: string;
   name: string;
@@ -48,9 +61,11 @@ export interface StorageStats {
   numberOfTosecDats: number;
   numberOfTosecGames: number;
   numberOfTosecRoms: number;
+  numberOfRetroarchRdbs: number;
+  numberOfRetroarchRoms: number;
 }
 
-export interface MatchResult {
+export interface TosecMatchResult {
   romFilepath: string;
   romExtension: string;
   romMimetype: string;
@@ -63,6 +78,15 @@ export interface MatchResult {
   tosecRomName: string;
 }
 
+export interface RetroarchMatchResult {
+  romFilepath: string;
+  romExtension: string;
+  romMimetype: string;
+  rdbFilepath: string;
+  rdbName: string;
+  retroarchRomName: string;
+}
+
 export class DataStorage {
   private readonly TABLES_TO_PERSIST: string[] = ["roms"];
 
@@ -70,15 +94,21 @@ export class DataStorage {
   private getRomByFilepathStatement: Statement | undefined;
   private updateRomHashesStatement: Statement | undefined;
   private datInsertStatement: Statement | undefined;
+  private rdbInsertStatement: Statement | undefined;
   private tosecRomInsertStatement: Statement | undefined;
+  private retroarchRomInsertStatement: Statement | undefined;
   private tosecGameInsertStatement: Statement | undefined;
   private datFileKnownStatement: Statement | undefined;
+  private rdbFileKnownStatement: Statement | undefined;
   private romFileKnownStatement: Statement | undefined;
   private listOfDatFilepathsStatement: Statement | undefined;
+  private listOfRdbFilepathsStatement: Statement | undefined;
   private listOfRomFilepathsStatement: Statement | undefined;
   private removeDatFileStatement: Statement | undefined;
+  private removeRdbFileStatement: Statement | undefined;
   private removeRomFileStatement: Statement | undefined;
   private getTosecForRomStatement: Statement | undefined;
+  private getRetroarchForRomStatement: Statement | undefined;
   private updateRomCorruptedStatement: Statement | undefined;
 
   constructor(private database: Database, private taskList: TaskList) {}
@@ -111,6 +141,13 @@ export class DataStorage {
       `
     );
 
+    this.rdbInsertStatement = this.database.prepare(
+      `
+                INSERT INTO retroarch_rdbs (filepath, name)
+                VALUES (@filepath, @name)
+      `
+    );
+
     this.tosecGameInsertStatement = this.database.prepare(
       `
                 INSERT INTO tosec_games (datid, name, description)
@@ -122,6 +159,13 @@ export class DataStorage {
       `
                 INSERT INTO tosec_roms (gameid, name, size, crc32, md5, sha1)
                 VALUES (@gameid, @name, @size, @crc32, @md5, @sha1)
+      `
+    );
+
+    this.retroarchRomInsertStatement = this.database.prepare(
+      `
+                INSERT INTO retroarch_roms (rdbid, name, crc32, md5, sha1)
+                VALUES (@rdbid, @name, @crc32, @md5, @sha1)
       `
     );
 
@@ -151,6 +195,14 @@ export class DataStorage {
       `
     );
 
+    this.rdbFileKnownStatement = this.database.prepare(
+      `
+                SELECT count(*) as count
+                FROM retroarch_rdbs
+                WHERE filepath = @filepath
+      `
+    );
+
     this.romFileKnownStatement = this.database.prepare(
       `
                 SELECT count(*) as count
@@ -169,6 +221,13 @@ export class DataStorage {
       `
     );
 
+    this.listOfRdbFilepathsStatement = this.database.prepare(
+      `
+                SELECT filepath
+                from retroarch_rdbs
+      `
+    );
+
     this.listOfRomFilepathsStatement = this.database.prepare(
       `
                 SELECT filepath
@@ -180,6 +239,14 @@ export class DataStorage {
       `
                 DELETE
                 FROM tosec_dats
+                WHERE filepath = @filepath
+      `
+    );
+
+    this.removeRdbFileStatement = this.database.prepare(
+      `
+                DELETE
+                FROM retroarch_rdbs
                 WHERE filepath = @filepath
       `
     );
@@ -213,6 +280,23 @@ export class DataStorage {
                   AND r.corrupted IS NULL
       `
     );
+
+    this.getRetroarchForRomStatement = this.database.prepare(
+      `
+                SELECT r.filepath   as romFilepath,
+                       r.extension  as romExtension,
+                       r.mimetype   as romMimetype,
+                       rdb.filepath as rdbFilepath,
+                       rdb.name     as rdbName,
+                       rr.name      as retroarchRomName
+                FROM roms AS r
+                         INNER JOIN retroarch_roms AS rr ON r.sha1 = rr.sha1 AND r.md5 = rr.md5 AND
+                                                            r.crc32 = rr.crc32
+                         INNER JOIN retroarch_rdbs AS rdb ON rr.rdbid = rdb.id
+                WHERE r.filepath = @filepath
+                  AND r.corrupted IS NULL
+      `
+    );
   }
 
   private createIndices(): void {
@@ -220,6 +304,8 @@ export class DataStorage {
         CREATE UNIQUE INDEX idx_roms_filepath ON roms (filepath);
         CREATE INDEX idx_roms_hashes ON roms (sha1, md5, crc32, corrupted);
         CREATE INDEX idx_roms_mimetype ON roms (mimetype);
+
+        CREATE INDEX idx_retroarch_rom_hashes ON retroarch_roms (sha1, md5, crc32);
 
         CREATE UNIQUE INDEX idx_tosec_dats_filepath ON tosec_dats (filepath);
 
@@ -243,6 +329,26 @@ export class DataStorage {
           extension TEXT DEFAULT NULL,
           mimetype  TEXT DEFAULT NULL,
           corrupted TEXT DEFAULT NULL
+      );
+
+      CREATE TABLE ${prefix}retroarch_rdbs (
+          id       INTEGER PRIMARY KEY,
+          filepath TEXT NOT NULL,
+          name     TEXT NOT NULL
+                                           
+      );
+
+      CREATE TABLE ${prefix}retroarch_roms(
+        id    INTEGER PRIMARY KEY,
+        rdbid INTEGER NOT NULL,
+        sha1  BLOB DEFAULT NULL,
+        md5   BLOB DEFAULT NULL,
+        crc32 BLOB DEFAULT NULL,
+        name  TEXT NOT NULL,
+        CONSTRAINT fk_rdbid
+          FOREIGN KEY (rdbid) 
+              REFERENCES retroarch_rdbs (id) 
+              ON DELETE CASCADE
       );
 
       CREATE TABLE ${prefix}tosec_dats
@@ -484,8 +590,18 @@ export class DataStorage {
     return info.lastInsertRowid as number;
   }
 
+  public storeRdbFile(rdb: RetroarchRdbFile): number {
+    const info = this.rdbInsertStatement.run(rdb);
+    return info.lastInsertRowid as number;
+  }
+
   public isDatFileAlreadyKnown(filepath: string): boolean {
     const { count } = this.datFileKnownStatement.get({ filepath });
+    return count === 1;
+  }
+
+  public isRdbFileAlreadyKnown(filepath: string): boolean {
+    const { count } = this.rdbFileKnownStatement.get({ filepath });
     return count === 1;
   }
 
@@ -508,8 +624,23 @@ export class DataStorage {
     });
   }
 
+  public storeRetroarchRom(rom: RetroarchRom): void {
+    this.retroarchRomInsertStatement.run({
+      ...rom,
+      crc32: this.hexToBuffer(rom.crc32),
+      md5: this.hexToBuffer(rom.md5),
+      sha1: this.hexToBuffer(rom.sha1)
+    });
+  }
+
   public async getDatFilepaths(): Promise<string[]> {
     return (await this.listOfDatFilepathsStatement.all()).map(
+      (row: { filepath: string }) => row.filepath
+    );
+  }
+
+  public async getRdbFilepaths(): Promise<string[]> {
+    return (await this.listOfRdbFilepathsStatement.all()).map(
       (row: { filepath: string }) => row.filepath
     );
   }
@@ -527,6 +658,11 @@ export class DataStorage {
   public async removeDatFileRecursive(filepath: string): Promise<void> {
     // ON DELETE CASCADE should take core of the rest.
     this.removeDatFileStatement.run({ filepath });
+  }
+
+  public async removeRdbFileRecursive(filepath: string): Promise<void> {
+    // ON DELETE CASCADE should take core of the rest.
+    this.removeRdbFileStatement.run({ filepath });
   }
 
   public async removeRomFile(filepath: string): Promise<void> {
@@ -577,19 +713,43 @@ export class DataStorage {
     );
     const { numberOfTosecRoms } = stmt.get();
 
+    stmt = this.database.prepare(
+      `
+                SELECT COUNT(*) as numberOfRetroarchRdbs
+                FROM retroarch_rdbs;
+      `
+    );
+    const { numberOfRetroarchRdbs } = stmt.get();
+
+    stmt = this.database.prepare(
+      `
+                SELECT COUNT(*) as numberOfRetroarchRoms
+                FROM retroarch_roms;
+      `
+    );
+    const { numberOfRetroarchRoms } = stmt.get();
+
     return {
       numberOfRoms,
       numberOfRomsZipped,
       numberOfTosecDats,
       numberOfTosecGames,
-      numberOfTosecRoms
+      numberOfTosecRoms,
+      numberOfRetroarchRdbs,
+      numberOfRetroarchRoms
     };
   }
 
   public async getTosecMatchForRom(
     filepath: string
-  ): Promise<MatchResult | undefined> {
+  ): Promise<TosecMatchResult | undefined> {
     return this.getTosecForRomStatement.get({ filepath });
+  }
+
+  public async getRetroarchMatchForRom(
+    filepath: string
+  ): Promise<RetroarchMatchResult | undefined> {
+    return this.getRetroarchForRomStatement.get({ filepath });
   }
 
   private hexToBuffer(hex: string): Buffer {

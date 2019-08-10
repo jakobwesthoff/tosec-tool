@@ -120,7 +120,12 @@ export class TosecCatalog implements ICatalog {
             update(`Parsing datsets (${finished} / ${total})...`);
           },
           undefined,
-          undefined,
+          (id: number, { filepath }: any) => {
+            tasks[id].update(
+              SimpleTaskState.RUNNING,
+              `Analysing roms from ${basename(filepath)}...`
+            );
+          },
           (id: number, _: string, data: any) => {
             tasks[id].update(SimpleTaskState.RUNNING, data);
           }

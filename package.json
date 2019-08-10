@@ -21,7 +21,8 @@
   "bin": {
     "tosec": "./build/src/tosec.js",
     "tosec-sort": "./build/src/tosec-sort.js",
-    "tosec-cleandb": "./build/src/tosec-cleandb.js"
+    "tosec-cleandb": "./build/src/tosec-cleandb.js",
+    "tosec-extract": "./build/src/tosec-extract.js"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^5.4.0",

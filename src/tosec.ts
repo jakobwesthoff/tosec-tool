@@ -17,6 +17,10 @@ const commands: Command[] = [
   {
     command: "cleandb",
     description: `Remove referenced, but not longer available Rom files from database.`
+  },
+  {
+    command: "extract",
+    description: `Extract roms from your collection based on the retroarch database.`
   }
 ];
 

@@ -3,24 +3,28 @@
 import * as Database from "better-sqlite3";
 import * as meow from "meow";
 import { DataStorage } from "./Library/DataStorage";
+import { Extractor } from "./Library/Extractor";
 import { exists, isReadable } from "./Library/FileAccess";
 import { MimeTypeResolver } from "./Library/MimeTypeResolver";
+import { RetroarchCatalog } from "./Library/RetroarchCatalog";
 import { RomCatalog } from "./Library/RomCatalog";
-import { Sorter } from "./Library/Sorter";
 import { SimpleTask } from "./Library/TaskList/SimpleTask";
 import { StaticInfoTask } from "./Library/TaskList/StaticInfoTask";
 import { TaskList, TaskUpdate } from "./Library/TaskList/TaskList";
-import { TosecCatalog } from "./Library/TosecCatalog";
 import logSymbols = require("log-symbols");
 
 const cli = meow(
   `
 	Usage
-	  $ tosec sort -t <dataset-dir> -o <output-dir> [-s <storage-file>] <input-dirs...>
+	  $ tosec extract -r <rdb-dir> -t <retroarchdb_tool> -o <output-dir> 
+	                  [-s <storage-file>] <input-dirs...>
 
   Options:
-    -t | --tosec: Directory where the TOSEC Datset (Collection of dat files)
-                  to match all input roms against can be found.
+    -r | --retroarch: Directory, where RETROARCH rdb files can be found used
+                      to match rom files for extraction against.
+   
+    -t | --tool: Full path to the retroarchdb_tool executable needed to
+                 extract the necessary information from rdb files.
                   
     -o | --output: Directory to store the sorted and matched files in
     
@@ -30,20 +34,26 @@ const cli = meow(
                     large (>500MiB).
                     
   Information:
+    Extract a RetroArch compatible subset of your rom file collection based
+    on a RETROARCH rdb datafile collection. This subset of roms is ideal to
+    be used with emulators like LAKKA.
+  
     Plain rom files will be hashed as they are. If rom files are zipped, the
     hash will be calculated based on the first file found in the archive.
     Therefore there is no need to decompress rom files before sorting them.
     
-    Sorted files are currently copied over and renamed to their target
+    Extracted files are currently copied over and renamed to their target
     location. Therefore possibly double the size of the input files is needed
     to be available for storage.
     
-	Examples
-	  $ tosec-sorter -t ./datasets -o ./sorted-output -s index.db ./source-1 ./source-2
 `,
   {
     flags: {
-      tosec: {
+      retroarch: {
+        type: "string",
+        alias: "r"
+      },
+      tool: {
         type: "string",
         alias: "t"
       },
@@ -59,7 +69,12 @@ const cli = meow(
   }
 );
 
-if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
+if (
+  cli.input.length < 1 ||
+  !cli.flags.retroarch ||
+  !cli.flags.tool ||
+  !cli.flags.output
+) {
   cli.showHelp();
 }
 (async () => {
@@ -78,6 +93,12 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
       );
     }
 
+    if (!(await exists(cli.flags.tool))) {
+      throw new Error(
+        `retroarchdb_tool not found at the given location: ${cli.flags.tool}. Aborting.`
+      );
+    }
+
     const inMemoryDatabase = new Database("", {
       memory: true
     });
@@ -93,7 +114,12 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
       mimeTypeResolver
     );
 
-    const tosecCatalog = new TosecCatalog(cli.flags.tosec, taskList, storage);
+    const retroarchCatalog = new RetroarchCatalog(
+      cli.flags.retroarch,
+      cli.flags.tool,
+      taskList,
+      storage
+    );
 
     taskList.start();
 
@@ -109,7 +135,7 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
       }
     }
 
-    await tosecCatalog.createIndex();
+    await retroarchCatalog.createIndex();
     await romsCatalog.createIndex();
 
     await taskList.withTask(
@@ -118,13 +144,12 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
         const {
           numberOfRoms,
           numberOfRomsZipped,
-          numberOfTosecDats,
-          numberOfTosecGames,
-          numberOfTosecRoms
+          numberOfRetroarchRdbs,
+          numberOfRetroarchRoms
         } = await storage.getStorageStats();
 
         update(
-          `Indexing complete: ${numberOfRoms} files (${numberOfRomsZipped} zipped), ${numberOfTosecDats} dats with ${numberOfTosecGames} games and ${numberOfTosecRoms} roms`
+          `Indexing complete: ${numberOfRoms} files (${numberOfRomsZipped} zipped), ${numberOfRetroarchRdbs} rdbs with ${numberOfRetroarchRoms} roms`
         );
       }
     );
@@ -133,12 +158,8 @@ if (cli.input.length < 1 || !cli.flags.tosec || !cli.flags.output) {
       await storage.saveFile(cli.flags.storage);
     }
 
-    const sorter = new Sorter(taskList, storage, cli.flags.output);
-    await sorter.sort();
-
-    if (cli.flags.storage) {
-      await storage.saveFile(cli.flags.storage);
-    }
+    const extractor = new Extractor(taskList, storage, cli.flags.output);
+    await extractor.extract();
 
     taskList.stop();
   } catch (error) {
