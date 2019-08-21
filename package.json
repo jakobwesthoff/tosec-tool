@@ -1,6 +1,6 @@
 {
   "name": "tosec-tool",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Tooling for usage with the TOSEC datasets and corresponding files.",
   "keywords": [
     "retro",
