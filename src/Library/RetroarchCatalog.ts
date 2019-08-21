@@ -98,13 +98,14 @@ export class RetroarchCatalog implements ICatalog {
           tasks.push(task);
         }
 
+        let processedRdbs = 0;
         const pool = new WorkerPool<Input, Result>(
           poolSize,
           `${__dirname}/Worker/readRdbFile.js`,
           async (
             total: number,
-            finished: number,
             _: number,
+            __: number,
             id: number,
             result: Result
           ) => {
@@ -119,7 +120,7 @@ export class RetroarchCatalog implements ICatalog {
               SimpleTaskState.RUNNING,
               `Ready to read next rdb...`
             );
-            update(`Reading rdbs (${finished} / ${total})...`);
+            update(`Reading rdbs (${++processedRdbs} / ${total})...`);
           },
           undefined,
           (id: number, { filepath }: any) => {
@@ -142,6 +143,7 @@ export class RetroarchCatalog implements ICatalog {
         for (let i = 0; i < poolSize; i++) {
           tasks[i].update(SimpleTaskState.FINISHED, null);
         }
+        await pool.finalize();
         update(`Read ${numberOfRdbs} rdbs.`);
       }
     );

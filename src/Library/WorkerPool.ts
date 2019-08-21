@@ -42,39 +42,15 @@ export class WorkerPool<InputType, OutputType> {
     private progress: WorkProgress = () => {}
   ) {}
 
-  public initialize(): Promise<void> {
-    // tslint:disable-next-line:promise-must-complete
-    return new Promise<void>((resolve: () => void) => {
-      let spawningWorkers = this.poolSize;
-      this.freeWorkers = [];
-      this.workers = [];
-      for (let i = 0; i < this.poolSize; i++) {
-        ((workerIndex: number) => {
-          const worker = new Worker(this.workerFilename);
-          worker.once("message", (message: WorkerMessage) => {
-            if (message.protocol !== "ready") {
-              throw new Error(
-                `First message of Worker was not ready, but ${message.protocol}`
-              );
-            }
-
-            this.workers[workerIndex] = worker;
-            this.freeWorkers[workerIndex] = worker;
-            worker.on("message", (message: WorkerMessage) => {
-              if (!this.active) {
-                return;
-              }
-              this.handleWorkerMessage(workerIndex, message);
-            });
-
-            spawningWorkers--;
-            if (spawningWorkers === 0) {
-              resolve();
-            }
-          });
-        })(i);
-      }
-    });
+  public async initialize(): Promise<void> {
+    this.freeWorkers = [];
+    this.workers = [];
+    await Promise.all(
+      // tslint:disable-next-line:prefer-array-literal
+      [...Array(this.poolSize).keys()].map((workerIndex: number) =>
+        this.spawnWorker(workerIndex)
+      )
+    );
   }
 
   public async run(input: InputType[]): Promise<void> {
@@ -90,15 +66,65 @@ export class WorkerPool<InputType, OutputType> {
     });
   }
 
+  public async finalize(): Promise<void> {
+    if (this.active) {
+      throw new Error(
+        `Can not finalize worker pool, while still processing data.`
+      );
+    }
+
+    await Promise.all(
+      // tslint:disable-next-line:prefer-array-literal
+      [...Array(this.poolSize).keys()].map((workerIndex: number) =>
+        this.terminateWorker(workerIndex)
+      )
+    );
+  }
+
+  private async terminateWorker(workerIndex: number): Promise<void> {
+    try {
+      await this.workers[workerIndex].terminate();
+    } catch (error) {
+      // Ignore termination errors for now.
+    }
+  }
+
+  private spawnWorker(workerIndex: number): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      const worker = new Worker(this.workerFilename);
+      worker.once("message", (message: WorkerMessage) => {
+        if (message.protocol !== "ready") {
+          throw new Error(
+            `First message of Worker was not ready, but ${message.protocol}`
+          );
+        }
+
+        this.workers[workerIndex] = worker;
+        this.freeWorkers[workerIndex] = worker;
+        worker.on("message", (message: WorkerMessage) => {
+          if (!this.active) {
+            return;
+          }
+          this.handleWorkerMessage(workerIndex, message);
+        });
+        worker.on("error", (error: Error) => {
+          if (!this.active) {
+            return;
+          }
+          this.handleWorkerError(workerIndex, error);
+        });
+        resolve();
+      });
+    });
+  }
+
   private async handleWorkerMessage(
     id: number,
     message: WorkerMessage
   ): Promise<void> {
     switch (true) {
       case message.protocol === "error":
-        await this.error(id, this.workerData[id], message.data);
-        this.freeWorkers.push(this.workers[id]);
-        this.processNextItem();
+        await this.handleWorkerError(id, message.data);
         break;
       case message.protocol === "result":
         await this.complete(
@@ -117,6 +143,20 @@ export class WorkerPool<InputType, OutputType> {
       default:
         throw new Error(`Unknown Worker message: ${message.protocol}`);
     }
+  }
+
+  private async handleWorkerError(
+    id: number,
+    error: Error | string
+  ): Promise<void> {
+    const errorObj =
+      error instanceof Error
+        ? error
+        : new Error(error.split(/\r\n|\r|\n/).shift());
+    await this.error(id, this.workerData[id], errorObj);
+    await this.workers[id].terminate();
+    await this.spawnWorker(id);
+    this.processNextItem();
   }
 
   private processNextItem(): void {

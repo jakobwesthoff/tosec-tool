@@ -167,7 +167,7 @@ export class RomCatalog implements ICatalog {
               new StaticWarningTask(
                 `Could not hash file ${filepath}: ${error.message}`
               ),
-              -1
+              -1 * (poolSize + 1)
             );
           },
           (id: number, { filepath }: any) => {
@@ -196,6 +196,8 @@ export class RomCatalog implements ICatalog {
         for (let i = 0; i < poolSize; i++) {
           tasks[i].update(SimpleTaskState.FINISHED, null);
         }
+
+        await pool.finalize();
 
         update(`Hashed ${hashedFileCount} roms.`);
       }

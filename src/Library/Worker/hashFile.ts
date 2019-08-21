@@ -39,12 +39,14 @@ function createReadableForFile(filepath: string, mimetype: string): Readable {
 }
 
 async function hashFile(filepath: string, mimetype: string): Promise<void> {
-  const fileStream = createReadableForFile(filepath, mimetype);
-  const sizeStream = new SizeStream();
-  fileStream.pipe(sizeStream);
-  let hashes;
   try {
-    hashes = await hashGenerator.hash(sizeStream);
+    const fileStream = createReadableForFile(filepath, mimetype);
+    fileStream.on('error', (error: Error) => {
+      parentPort.postMessage({ protocol: "error", data: error });
+    });
+    const sizeStream = new SizeStream();
+    fileStream.pipe(sizeStream);
+    const hashes = await hashGenerator.hash(sizeStream);
     parentPort.postMessage({
       protocol: "result",
       data: { filepath, hashes, size: sizeStream.getSize() }

@@ -1,22 +1,21 @@
-import {filterSeries} from "p-iteration";
-import {basename} from 'path';
+import { filterSeries } from "p-iteration";
+import { basename } from "path";
 import * as readdirp from "readdirp";
-import {DataStorage, DatFile, TosecGame, TosecRom} from "./DataStorage";
-import {EntryInfo} from "./EntryInfo";
-import {exists} from "./FileAccess";
-import {ICatalog} from "./ICatalog";
-import {SimpleTask, SimpleTaskState} from "./TaskList/SimpleTask";
-import {TaskList, TaskUpdate} from "./TaskList/TaskList";
-import {ParsedData, Result} from "./Worker/parseDatFile";
-import {WorkerPool} from "./WorkerPool";
+import { DataStorage, DatFile, TosecGame, TosecRom } from "./DataStorage";
+import { EntryInfo } from "./EntryInfo";
+import { exists } from "./FileAccess";
+import { ICatalog } from "./ICatalog";
+import { SimpleTask, SimpleTaskState } from "./TaskList/SimpleTask";
+import { TaskList, TaskUpdate } from "./TaskList/TaskList";
+import { ParsedData, Result } from "./Worker/parseDatFile";
+import { WorkerPool } from "./WorkerPool";
 
 export class TosecCatalog implements ICatalog {
   constructor(
     private datasetDirectory: string,
     private taskList: TaskList,
     private storage: DataStorage
-  ) {
-  }
+  ) {}
 
   public async createIndex(): Promise<void> {
     await this.cleanupRemovedFiles();
@@ -98,29 +97,32 @@ export class TosecCatalog implements ICatalog {
           tasks.push(task);
         }
 
+        let parsedDatSets = 0;
         const pool = new WorkerPool<string, Result>(
           poolSize,
           `${__dirname}/Worker/parseDatFile.js`,
           async (
             total: number,
-            finished: number,
             _: number,
+            __: number,
             id: number,
             result: Result
           ) => {
             tasks[id].update(
               SimpleTaskState.RUNNING,
-              `Analysing roms from ${basename(result.filepath)} (${result.data.roms.length}) [indexing]...`
+              `Analysing roms from ${basename(result.filepath)} (${
+                result.data.roms.length
+              }) [indexing]...`
             );
             await this.storeDatFile(result.data);
             tasks[id].update(
               SimpleTaskState.RUNNING,
               `Ready to parse next dat...`
             );
-            update(`Parsing datsets (${finished} / ${total})...`);
+            update(`Parsing datsets (${++parsedDatSets} / ${total})...`);
           },
           undefined,
-          (id: number, { filepath }: any) => {
+          (id: number, filepath: string) => {
             tasks[id].update(
               SimpleTaskState.RUNNING,
               `Analysing roms from ${basename(filepath)}...`
@@ -135,6 +137,7 @@ export class TosecCatalog implements ICatalog {
         for (let i = 0; i < poolSize; i++) {
           tasks[i].update(SimpleTaskState.FINISHED, null);
         }
+        await pool.finalize();
         update(`Parsed ${numberOfDats} datsets.`);
       }
     );
