@@ -1,5 +1,14 @@
 # TOSEC Tool
 
+# WARNING: UNMAINTAINED
+
+Eventhough this tool should still work, I haven't have the need to use it for
+quite some time. Furthermore I didn't have the time recently to integrate
+security fixes, or update dependencies. Therefore use it at your own risk. Of
+course feel free to update the dependencies yourself and create PR. That would
+be highly appreciated. I might update this tool and its dependencies once
+I need it again.
+
 # About
 
 The TOSEC Tool is a commandline utility (*cli*), which allows to perform

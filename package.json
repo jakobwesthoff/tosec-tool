@@ -16,7 +16,7 @@
     "url": "https://github.com/jakobwesthoff/tosec-tool.git"
   },
   "engines": {
-    "node": ">= 12 <13"
+    "node": ">= 14"
   },
   "bin": {
     "tosec": "./build/src/tosec.js",
